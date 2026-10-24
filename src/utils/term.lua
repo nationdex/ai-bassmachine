@@ -102,12 +102,22 @@ if is_windows then
     if ok and ffi then
       pcall(function()
         ffi.cdef([[
+          typedef struct { short X; short Y; } COORD;
+          typedef struct { short Left; short Top; short Right; short Bottom; } SMALL_RECT;
+          typedef struct {
+            COORD dwSize;
+            COORD dwCursorPosition;
+            unsigned short wAttributes;
+            SMALL_RECT srWindow;
+            COORD dwMaximumWindowSize;
+          } CONSOLE_SCREEN_BUFFER_INFO;
           int _kbhit(void);
           int _getch(void);
           void Sleep(unsigned long dwMilliseconds);
           void* GetStdHandle(int nStdHandle);
           int GetConsoleMode(void* hConsoleHandle, unsigned int* lpMode);
           int SetConsoleMode(void* hConsoleHandle, unsigned int dwMode);
+          int GetConsoleScreenBufferInfo(void* hConsoleOutput, CONSOLE_SCREEN_BUFFER_INFO* lpConsoleScreenBufferInfo);
         ]])
         win_ffi = ffi
       end)
@@ -144,7 +154,7 @@ function term.get_window_size(force)
     return cached_rows, cached_cols
   end
 
-  -- 2. Windows-specific size query (Direct in-process Win32 query)
+  -- 2. Windows-specific size query (Direct in-process Win32 query via native DLL or FFI)
   if is_windows then
     if win_get_window_size then
       local wok, r, c = pcall(win_get_window_size)
@@ -152,6 +162,18 @@ function term.get_window_size(force)
         cached_rows = r
         cached_cols = c
         return cached_rows, cached_cols
+      end
+    elseif win_ffi then
+      local csbi = win_ffi.new("CONSOLE_SCREEN_BUFFER_INFO[1]")
+      local hOut = win_ffi.C.GetStdHandle(-11)
+      if win_ffi.C.GetConsoleScreenBufferInfo(hOut, csbi) ~= 0 then
+        local r = csbi[0].srWindow.Bottom - csbi[0].srWindow.Top + 1
+        local c = csbi[0].srWindow.Right - csbi[0].srWindow.Left + 1
+        if r > 0 and c > 0 then
+          cached_rows = r
+          cached_cols = c
+          return cached_rows, cached_cols
+        end
       end
     end
     return cached_rows, cached_cols
