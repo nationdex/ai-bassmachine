@@ -38,11 +38,22 @@ An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, test
 
 ## Installation & Quick Start
 
-### Prerequisites
-- Lua 5.1+ or LuaJIT
-- `curl` and POSIX shell (`stty`, `mkfifo`)
+### Quick One-Liner Install
 
-### Running the TUI
+#### Linux & macOS (cURL / Bash)
+```bash
+curl -fsSL https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.sh | bash
+```
+
+#### Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.ps1 | iex
+```
+
+---
+
+### Manual Clone
+
 ```bash
 git clone https://github.com/nationdex/mcp-bassmachine.git
 cd mcp-bassmachine
