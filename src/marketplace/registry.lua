@@ -1,5 +1,5 @@
 -- MCP Bass Machine - Multi-Marketplace MCP Registry
--- Fetches and searches MCP servers from Smithery, Glama, Awesome-MCP, and MCP Index.
+-- Fetches and searches MCP servers from Official Registry, Smithery, Glama, and Awesome-MCP.
 
 local json = require("mcp-bassmachine.utils.json")
 
@@ -7,6 +7,7 @@ local Registry = {}
 Registry.__index = Registry
 
 local CURATED_CATALOG = {
+  -- Core Official MCPs
   {
     id = "mcp-filesystem",
     name = "Filesystem MCP",
@@ -41,6 +42,17 @@ local CURATED_CATALOG = {
     category = "Database",
   },
   {
+    id = "mcp-postgres",
+    name = "PostgreSQL Inspector",
+    author = "Model Context Protocol Official",
+    source = "official",
+    description = "Full schema introspection, table definitions, and parameterized query execution.",
+    command = "npx",
+    args = { "-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/dev" },
+    tags = { "database", "postgres", "sql" },
+    category = "Database",
+  },
+  {
     id = "mcp-git",
     name = "Git Repository MCP",
     author = "Model Context Protocol Official",
@@ -52,15 +64,48 @@ local CURATED_CATALOG = {
     category = "Development",
   },
   {
+    id = "mcp-github",
+    name = "GitHub API MCP",
+    author = "Model Context Protocol Official",
+    source = "official",
+    description = "Inspect pull requests, issues, commits, repositories, and workflow runs.",
+    command = "npx",
+    args = { "-y", "@modelcontextprotocol/server-github" },
+    tags = { "github", "git", "api" },
+    category = "Development",
+  },
+  {
+    id = "mcp-gitlab",
+    name = "GitLab API MCP",
+    author = "Model Context Protocol Official",
+    source = "official",
+    description = "Interact with GitLab projects, merge requests, CI pipelines, and issues.",
+    command = "npx",
+    args = { "-y", "@modelcontextprotocol/server-gitlab" },
+    tags = { "gitlab", "git", "ci" },
+    category = "Development",
+  },
+  {
     id = "mcp-brave-search",
     name = "Brave Search MCP",
     author = "Model Context Protocol Official",
-    source = "smithery",
+    source = "official",
     description = "Real-time web and local search using the privacy-focused Brave Search API.",
     command = "npx",
     args = { "-y", "@modelcontextprotocol/server-brave-search" },
     tags = { "search", "web", "brave" },
     category = "Search",
+  },
+  {
+    id = "mcp-google-maps",
+    name = "Google Maps MCP",
+    author = "Model Context Protocol Official",
+    source = "official",
+    description = "Location services, geocoding, places discovery, and turn-by-turn routing.",
+    command = "npx",
+    args = { "-y", "@modelcontextprotocol/server-google-maps" },
+    tags = { "maps", "location", "geo" },
+    category = "Web",
   },
   {
     id = "mcp-memory",
@@ -74,17 +119,6 @@ local CURATED_CATALOG = {
     category = "AI",
   },
   {
-    id = "mcp-postgres",
-    name = "PostgreSQL Inspector",
-    author = "Model Context Protocol Official",
-    source = "glama",
-    description = "Full schema introspection, table definitions, and parameterized query execution.",
-    command = "npx",
-    args = { "-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/dev" },
-    tags = { "database", "postgres", "sql" },
-    category = "Database",
-  },
-  {
     id = "mcp-everything",
     name = "Everything Reference Server",
     author = "Model Context Protocol Official",
@@ -96,40 +130,240 @@ local CURATED_CATALOG = {
     category = "Testing",
   },
   {
-    id = "mcp-github",
-    name = "GitHub API MCP",
-    author = "Model Context Protocol Official",
-    source = "awesome-mcp",
-    description = "Inspect pull requests, issues, commits, repositories, and workflow runs.",
-    command = "npx",
-    args = { "-y", "@modelcontextprotocol/server-github" },
-    tags = { "github", "git", "api" },
-    category = "Development",
-  },
-  {
     id = "mcp-puppeteer",
-    name = "Puppeteer Browser Automation",
+    name = "Puppeteer Automation",
     author = "Model Context Protocol Official",
-    source = "smithery",
-    description = "Automate headless Chromium browsing, take screenshots, and evaluate scripts.",
+    source = "official",
+    description = "Headless Chromium browser automation, screenshots, and DOM scraping.",
     command = "npx",
     args = { "-y", "@modelcontextprotocol/server-puppeteer" },
     tags = { "browser", "automation", "puppeteer" },
     category = "Web",
+  },
+  {
+    id = "mcp-slack",
+    name = "Slack MCP",
+    author = "Model Context Protocol Official",
+    source = "official",
+    description = "Interact with Slack channels, post messages, and read thread replies.",
+    command = "npx",
+    args = { "-y", "@modelcontextprotocol/server-slack" },
+    tags = { "slack", "chat", "communication" },
+    category = "Communication",
+  },
+  {
+    id = "mcp-sequential-thinking",
+    name = "Sequential Thinking MCP",
+    author = "Model Context Protocol Official",
+    source = "official",
+    description = "Dynamic multi-step reflective reasoning engine for complex agent problem solving.",
+    command = "npx",
+    args = { "-y", "@modelcontextprotocol/server-sequential-thinking" },
+    tags = { "thinking", "reasoning", "ai" },
+    category = "AI",
+  },
+
+  -- Cloud & Infrastructure
+  {
+    id = "mcp-docker",
+    name = "Docker Engine MCP",
+    author = "Community",
+    source = "awesome-mcp",
+    description = "Manage Docker containers, images, volumes, and networks via Docker daemon API.",
+    command = "npx",
+    args = { "-y", "docker-mcp" },
+    tags = { "docker", "containers", "devops" },
+    category = "DevOps",
+  },
+  {
+    id = "mcp-kubernetes",
+    name = "Kubernetes Cluster MCP",
+    author = "Community",
+    source = "awesome-mcp",
+    description = "Inspect pods, services, deployments, and cluster logs through kubectl contexts.",
+    command = "npx",
+    args = { "-y", "kubernetes-mcp-server" },
+    tags = { "k8s", "kubernetes", "cloud" },
+    category = "DevOps",
+  },
+  {
+    id = "mcp-aws-s3",
+    name = "AWS S3 Storage MCP",
+    author = "Community",
+    source = "awesome-mcp",
+    description = "Browse, upload, download, and manage objects and buckets in Amazon S3.",
+    command = "uvx",
+    args = { "mcp-server-s3" },
+    tags = { "aws", "s3", "cloud", "storage" },
+    category = "DevOps",
+  },
+  {
+    id = "mcp-redis",
+    name = "Redis Key-Value MCP",
+    author = "Redis Official",
+    source = "awesome-mcp",
+    description = "Query keys, inspect data structures, run Redis commands, and monitor memory.",
+    command = "npx",
+    args = { "-y", "@redis/mcp-server-redis" },
+    tags = { "redis", "database", "cache" },
+    category = "Database",
+  },
+  {
+    id = "mcp-elasticsearch",
+    name = "Elasticsearch MCP",
+    author = "Community",
+    source = "awesome-mcp",
+    description = "Search indices, execute Lucene/DSL queries, and inspect cluster health.",
+    command = "npx",
+    args = { "-y", "mcp-server-elasticsearch" },
+    tags = { "elasticsearch", "search", "database" },
+    category = "Database",
+  },
+
+  -- Productivity & Knowledge
+  {
+    id = "mcp-notion",
+    name = "Notion Workspace MCP",
+    author = "Community",
+    source = "smithery",
+    description = "Query Notion databases, search pages, append blocks, and manage tasks.",
+    command = "npx",
+    args = { "-y", "@notionhq/notion-mcp" },
+    tags = { "notion", "productivity", "docs" },
+    category = "Productivity",
+  },
+  {
+    id = "mcp-linear",
+    name = "Linear Issue Tracker",
+    author = "Jerhadf",
+    source = "glama",
+    description = "Search issues, update issue status, create tickets, and manage project sprints.",
+    command = "npx",
+    args = { "-y", "mcp-server-linear" },
+    tags = { "linear", "project", "issues" },
+    category = "Productivity",
+  },
+  {
+    id = "mcp-jira",
+    name = "Atlassian Jira MCP",
+    author = "Community",
+    source = "awesome-mcp",
+    description = "Introspect Jira boards, create tickets, transition states, and search JQL.",
+    command = "npx",
+    args = { "-y", "mcp-jira-server" },
+    tags = { "jira", "atlassian", "issues" },
+    category = "Productivity",
+  },
+  {
+    id = "mcp-obsidian",
+    name = "Obsidian Markdown Vault",
+    author = "Community",
+    source = "awesome-mcp",
+    description = "Read, search, backlink, and modify notes inside local Obsidian vaults.",
+    command = "npx",
+    args = { "-y", "mcp-obsidian-server" },
+    tags = { "obsidian", "notes", "markdown" },
+    category = "Productivity",
+  },
+  {
+    id = "mcp-todoist",
+    name = "Todoist Task Manager",
+    author = "Community",
+    source = "awesome-mcp",
+    description = "Sync tasks, manage due dates, and organize projects via Todoist REST API.",
+    command = "uvx",
+    args = { "todoist-mcp" },
+    tags = { "todoist", "tasks", "productivity" },
+    category = "Productivity",
+  },
+
+  -- Search & Web
+  {
+    id = "mcp-playwright",
+    name = "Playwright Browser MCP",
+    author = "Community",
+    source = "smithery",
+    description = "Automate web interaction, click buttons, fill forms, and snapshot web apps.",
+    command = "npx",
+    args = { "-y", "@executeautomation/playwright-mcp-server" },
+    tags = { "playwright", "browser", "automation" },
+    category = "Web",
+  },
+  {
+    id = "mcp-exa-search",
+    name = "Exa Neural Search MCP",
+    author = "Exa AI",
+    source = "glama",
+    description = "Neural search engine built for LLMs to find live web documents and research papers.",
+    command = "npx",
+    args = { "-y", "exa-mcp-server" },
+    tags = { "search", "exa", "ai" },
+    category = "Search",
+  },
+  {
+    id = "mcp-tavily",
+    name = "Tavily AI Search MCP",
+    author = "Tavily",
+    source = "glama",
+    description = "Search engine optimized specifically for LLMs and autonomous AI agents.",
+    command = "npx",
+    args = { "-y", "tavily-mcp" },
+    tags = { "search", "tavily", "ai" },
+    category = "Search",
+  },
+  {
+    id = "mcp-context7",
+    name = "Context7 Live Docs MCP",
+    author = "Upstash",
+    source = "smithery",
+    description = "Search and fetch up-to-date documentation and code samples for popular libraries.",
+    command = "npx",
+    args = { "-y", "@upstash/context7-mcp" },
+    tags = { "docs", "documentation", "reference" },
+    category = "Development",
   },
 }
 
 function Registry.new(config)
   local self = setmetatable({}, Registry)
   self.config = config
+  self.cache_file = os.getenv("HOME") .. "/.bassmachine_mcp_cache.json"
   self.cache = {}
   self.cached_at = 0
   self.is_fetching = false
+  self:load_cache_from_disk()
   return self
 end
 
-function Registry.fetch_live_marketplace(url, source_name)
-  local cmd = string.format("curl -s -m 5 '%s' 2>/dev/null", url)
+function Registry:load_cache_from_disk()
+  local f = io.open(self.cache_file, "r")
+  if f then
+    local content = f:read("*a")
+    f:close()
+    if content and #content > 0 then
+      local parsed = json.decode(content)
+      if type(parsed) == "table" and parsed.items then
+        self.cache = parsed.items
+        self.cached_at = parsed.cached_at or 0
+      end
+    end
+  end
+end
+
+function Registry:save_cache_to_disk()
+  local f = io.open(self.cache_file, "w")
+  if f then
+    local payload = json.encode({
+      cached_at = os.time(),
+      items = self.cache,
+    })
+    f:write(payload)
+    f:close()
+  end
+end
+
+function Registry.fetch_official_registry()
+  local cmd = "curl -s -m 6 'https://registry.modelcontextprotocol.io/v0.1/servers' 2>/dev/null"
   local f = io.popen(cmd, "r")
   if not f then
     return {}
@@ -142,43 +376,146 @@ function Registry.fetch_live_marketplace(url, source_name)
   end
 
   local parsed = json.decode(body)
-  if not parsed or type(parsed) ~= "table" then
+  if not parsed or type(parsed) ~= "table" or not parsed.servers then
     return {}
   end
 
   local results = {}
-  -- Handle list or nested object results
-  local items = parsed.items or parsed.servers or parsed
-  if type(items) == "table" then
-    for idx, item in ipairs(items) do
-      if type(item) == "table" and item.name then
-        table.insert(results, {
-          id = item.id or (source_name .. "-" .. tostring(idx)),
-          name = item.name,
-          author = item.author or item.vendor or source_name,
-          source = source_name,
-          description = item.description or "No description provided.",
-          command = item.command or "npx",
-          args = item.args or { "-y", item.name },
-          tags = item.tags or { source_name },
-          category = item.category or "General",
-        })
+  local seen = {}
+
+  for _, entry in ipairs(parsed.servers) do
+    local s = entry.server
+    if s and s.name and not seen[s.name] then
+      seen[s.name] = true
+      local display_name = s.title or s.name
+      local remotes = s.remotes or {}
+      local remote_url = nil
+      if #remotes > 0 and remotes[1].url then
+        remote_url = remotes[1].url
+      end
+
+      local command = "npx"
+      local args = { "-y", s.name }
+      if remote_url then
+        command = "curl"
+        args = { "-N", remote_url }
+      end
+
+      local cat = "Official Registry"
+      local name_l = s.name:lower()
+      if name_l:match("search") or name_l:match("find") then
+        cat = "Search"
+      elseif name_l:match("ai") or name_l:match("inference") or name_l:match("agent") then
+        cat = "AI"
+      elseif name_l:match("db") or name_l:match("sql") or name_l:match("data") then
+        cat = "Database"
+      elseif name_l:match("web") or name_l:match("browser") or name_l:match("scrape") then
+        cat = "Web"
+      end
+
+      table.insert(results, {
+        id = "official-" .. (s.name:gsub("[^%w_%-]", "-")),
+        name = display_name,
+        author = s.name:match("^([^/]+)") or "Official Registry",
+        source = "official-reg",
+        description = s.description or ("Official MCP registry server: " .. s.name),
+        command = command,
+        args = args,
+        url = remote_url,
+        tags = { "official", "registry", s.version or "1.0.0" },
+        category = cat,
+      })
+    end
+  end
+
+  return results
+end
+
+function Registry.fetch_awesome_mcp()
+  local cmd = "curl -s -m 8 'https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md' 2>/dev/null"
+  local f = io.popen(cmd, "r")
+  if not f then
+    return {}
+  end
+  local text = f:read("*a")
+  f:close()
+
+  if not text or #text < 100 then
+    return {}
+  end
+
+  local results = {}
+  local seen = {}
+  local cur_category = "Community"
+
+  for line in text:gmatch("[^\r\n]+") do
+    local cat_header = line:match("^###%s+(.+)$") or line:match("^##%s+(.+)$")
+    if cat_header then
+      local clean_cat = cat_header:gsub("<[^>]+>", ""):gsub("[^%w%s%-_/]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+      if #clean_cat > 0 and not clean_cat:find("Table of", 1, true) then
+        cur_category = clean_cat
+      end
+    end
+
+    local name, url, rest = line:match("^%-%s+%[([^%]]+)%]%((https?://[^%)]+)%)%s*(.*)$")
+    if
+      name
+      and url
+      and not seen[name]
+      and not name:find("Build your own", 1, true)
+      and not name:find("awesome", 1, true)
+    then
+      seen[name] = true
+      local clean_desc = rest:gsub("%[!%[[^%]]*%]%([^%)]*%)%]%s*", "")
+      clean_desc = clean_desc:gsub("%([^%)]*%)%s*", "")
+      clean_desc = clean_desc:gsub("[%z\1-\31\128-\255]+", " ")
+      clean_desc = clean_desc:gsub("^[%s%-]+", ""):gsub("%s+$", "")
+      if #clean_desc == 0 then
+        clean_desc = "Community MCP Server for " .. name
+      end
+
+      local pkg_id = name:gsub("[^%w_%-]", "-"):lower()
+      local cmd_name = name:match("/([^/]+)$") or name
+      table.insert(results, {
+        id = "awesome-" .. pkg_id,
+        name = name,
+        author = name:match("^([^/]+)") or "Community",
+        source = "awesome-mcp",
+        description = clean_desc:sub(1, 140),
+        command = "npx",
+        args = { "-y", cmd_name },
+        url = url,
+        tags = { "awesome", "community", cur_category },
+        category = cur_category,
+      })
+
+      if #results >= 120 then
+        break
       end
     end
   end
+
   return results
 end
 
 function Registry:get_all()
   local items = {}
-  -- Always include curated baseline
+  local seen = {}
+
+  -- 1. Always include curated baseline
   for _, item in ipairs(CURATED_CATALOG) do
-    table.insert(items, item)
+    if not seen[item.name] then
+      seen[item.name] = true
+      table.insert(items, item)
+    end
   end
 
-  -- Add cached remote marketplace results if available
+  -- 2. Add cached remote marketplace results
   for _, item in ipairs(self.cache) do
-    table.insert(items, item)
+    if not seen[item.name] then
+      seen[item.name] = true
+      table.insert(items, item)
+    end
   end
 
   return items
@@ -230,14 +567,32 @@ function Registry:search(query, category, source_filter)
   return filtered
 end
 
-function Registry:refresh_marketplaces_async()
-  -- Fetch from official MCP catalog and registries in background
-  local smithery_url = "https://registry.smithery.ai/api/servers"
-  local remote_smithery = self:fetch_live_marketplace(smithery_url, "smithery")
-  for _, it in ipairs(remote_smithery) do
-    table.insert(self.cache, it)
+function Registry:refresh_marketplaces()
+  local official_servers = self.fetch_official_registry()
+  local awesome_servers = self.fetch_awesome_mcp()
+
+  local combined = {}
+  local seen = {}
+  for _, it in ipairs(official_servers) do
+    if not seen[it.name] then
+      seen[it.name] = true
+      table.insert(combined, it)
+    end
   end
-  self.cached_at = os.time()
+  for _, it in ipairs(awesome_servers) do
+    if not seen[it.name] then
+      seen[it.name] = true
+      table.insert(combined, it)
+    end
+  end
+
+  if #combined > 0 then
+    self.cache = combined
+    self.cached_at = os.time()
+    self:save_cache_to_disk()
+    return true, #combined
+  end
+  return false, 0
 end
 
 return Registry

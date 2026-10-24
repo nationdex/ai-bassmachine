@@ -49,7 +49,26 @@ function term.move_to(row, col)
   return string.format("\27[%d;%dH", row, col)
 end
 
-function term.get_window_size()
+local cached_rows = 24
+local cached_cols = 80
+local last_size_check = 0
+local size_poll_interval = 0.5 -- Only spawn stty every 500ms maximum to prevent latency
+
+function term.get_window_size(force)
+  local now
+  local ok, socket = pcall(require, "socket")
+  if ok and socket and socket.gettime then
+    now = socket.gettime()
+  else
+    now = os.time()
+  end
+
+  if not force and (now - last_size_check < size_poll_interval) then
+    return cached_rows, cached_cols
+  end
+
+  last_size_check = now
+
   -- Query /dev/tty explicitly first so SSH and redirected standard streams report accurate window dimensions
   local f = io.popen("stty size < /dev/tty 2>/dev/null || stty size 2>/dev/null", "r")
   if f then
@@ -59,7 +78,9 @@ function term.get_window_size()
     if r and c then
       local nr, nc = tonumber(r), tonumber(c)
       if nr and nc and nr > 0 and nc > 0 then
-        return nr, nc
+        cached_rows = nr
+        cached_cols = nc
+        return cached_rows, cached_cols
       end
     end
   end
@@ -67,10 +88,25 @@ function term.get_window_size()
   local lines = tonumber(os.getenv("LINES"))
   local columns = tonumber(os.getenv("COLUMNS"))
   if lines and columns and lines > 0 and columns > 0 then
-    return lines, columns
+    cached_rows = lines
+    cached_cols = columns
+    return cached_rows, cached_cols
   end
 
-  return 24, 80
+  return cached_rows, cached_cols
+end
+
+function term.sleep(seconds)
+  local ok, socket = pcall(require, "socket")
+  if ok and socket and socket.sleep then
+    socket.sleep(seconds)
+  else
+    -- Fallback portable non-busy sleep via read timeout in raw mode or os.execute
+    local ms = math.floor(seconds * 1000)
+    if ms > 0 then
+      os.execute(string.format("sleep %f 2>/dev/null || sleep 1 2>/dev/null", seconds))
+    end
+  end
 end
 
 local saved_stty = nil
@@ -84,7 +120,7 @@ function term.enter_raw_mode()
       saved_stty = saved_stty:gsub("%s+", "")
     end
   end
-  os.execute("stty raw -echo min 0 time 1 2>/dev/null")
+  os.execute("stty raw -echo min 0 time 0 2>/dev/null")
   io.write(term.colors.alt_screen_on)
   io.write(term.colors.hide_cursor)
   io.write(term.colors.mouse_on)

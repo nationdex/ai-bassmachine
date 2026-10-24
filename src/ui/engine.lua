@@ -12,10 +12,12 @@ function Engine.new(fps)
   local self = setmetatable({}, Engine)
   self.fps = fps or 30
   self.running = false
-  self.rows, self.cols = term.get_window_size()
+  self.rows, self.cols = term.get_window_size(true)
   self.buffer = {}
+  self.prev_buffer = {}
   self.bass_bars = { 2, 4, 7, 5, 8, 6, 3, 5, 7, 4 }
   self.bass_phase = 0
+  self.full_redraw_needed = true
   self:init_buffer(self.rows, self.cols)
   return self
 end
@@ -25,18 +27,22 @@ function Engine:init_buffer(rows, cols)
     self.rows = math.max(1, rows)
     self.cols = math.max(1, cols)
   else
-    local r, c = term.get_window_size()
+    local r, c = term.get_window_size(true)
     self.rows = math.max(1, r)
     self.cols = math.max(1, c)
   end
 
   self.buffer = {}
+  self.prev_buffer = {}
   for r = 1, self.rows do
     self.buffer[r] = {}
+    self.prev_buffer[r] = {}
     for c = 1, self.cols do
       self.buffer[r][c] = { char = " ", fg = term.palette.fg_primary, bg = term.palette.bg_dark }
+      self.prev_buffer[r][c] = { char = "", fg = "", bg = "" }
     end
   end
+  self.full_redraw_needed = true
 end
 
 function Engine:resize(new_r, new_c)
@@ -102,9 +108,12 @@ function Engine:draw_text(row, col, text, fg, bg)
     end
 
     if c >= 1 and c <= self.cols then
-      self.buffer[row][c].char = ch
-      self.buffer[row][c].fg = fg
-      self.buffer[row][c].bg = bg
+      local cell = self.buffer[row][c]
+      if cell then
+        cell.char = ch
+        cell.fg = fg
+        cell.bg = bg
+      end
     end
     c = c + 1
   end
@@ -174,41 +183,94 @@ end
 
 function Engine:render()
   local out = {}
-  table.insert(out, "\27[H") -- Move to home
-
   local last_fg = nil
   local last_bg = nil
 
-  for r = 1, self.rows do
-    local row_buf = self.buffer[r]
-    if row_buf then
-      for c = 1, self.cols do
-        local cell = row_buf[c]
-        if cell then
-          if cell.fg ~= last_fg then
-            table.insert(out, cell.fg)
-            last_fg = cell.fg
+  if self.full_redraw_needed then
+    self.full_redraw_needed = false
+    table.insert(out, "\27[H")
+    for r = 1, self.rows do
+      local row_buf = self.buffer[r]
+      local prev_row = self.prev_buffer[r]
+      if row_buf then
+        for c = 1, self.cols do
+          local cell = row_buf[c]
+          if cell then
+            if cell.fg ~= last_fg then
+              table.insert(out, cell.fg)
+              last_fg = cell.fg
+            end
+            if cell.bg ~= last_bg then
+              table.insert(out, cell.bg)
+              last_bg = cell.bg
+            end
+            table.insert(out, cell.char)
+            if prev_row and prev_row[c] then
+              prev_row[c].char = cell.char
+              prev_row[c].fg = cell.fg
+              prev_row[c].bg = cell.bg
+            end
+          else
+            table.insert(out, " ")
           end
-          if cell.bg ~= last_bg then
-            table.insert(out, cell.bg)
-            last_bg = cell.bg
+        end
+      end
+      if r < self.rows then
+        table.insert(out, "\27[K\r\n")
+      else
+        table.insert(out, "\27[K")
+      end
+    end
+    table.insert(out, "\27[J")
+  else
+    -- High performance differential rendering: only emit ANSI cursor jumps & text for modified cells
+    for r = 1, self.rows do
+      local row_buf = self.buffer[r]
+      local prev_row = self.prev_buffer[r]
+      if row_buf and prev_row then
+        local c = 1
+        while c <= self.cols do
+          local cell = row_buf[c]
+          local pcell = prev_row[c]
+          if cell and pcell and (cell.char ~= pcell.char or cell.fg ~= pcell.fg or cell.bg ~= pcell.bg) then
+            -- Jump cursor to changed cell position
+            table.insert(out, string.format("\27[%d;%dH", r, c))
+            -- Stream contiguous run of changed cells
+            while c <= self.cols do
+              local cur = row_buf[c]
+              local pcur = prev_row[c]
+              if not cur or not pcur then
+                break
+              end
+              if cur.char == pcur.char and cur.fg == pcur.fg and cur.bg == pcur.bg then
+                break
+              end
+              if cur.fg ~= last_fg then
+                table.insert(out, cur.fg)
+                last_fg = cur.fg
+              end
+              if cur.bg ~= last_bg then
+                table.insert(out, cur.bg)
+                last_bg = cur.bg
+              end
+              table.insert(out, cur.char)
+              pcur.char = cur.char
+              pcur.fg = cur.fg
+              pcur.bg = cur.bg
+              c = c + 1
+            end
+          else
+            c = c + 1
           end
-          table.insert(out, cell.char)
-        else
-          table.insert(out, " ")
         end
       end
     end
-    if r < self.rows then
-      table.insert(out, "\27[K\r\n")
-    else
-      table.insert(out, "\27[K")
-    end
   end
 
-  table.insert(out, "\27[J") -- Clear any remaining content below current bounds
-  io.write(table.concat(out))
-  io.flush()
+  if #out > 0 then
+    io.write(table.concat(out))
+    io.flush()
+  end
 end
 
 return Engine

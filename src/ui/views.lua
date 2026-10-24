@@ -8,10 +8,37 @@ local json = require("mcp-bassmachine.utils.json")
 local views = {}
 
 -- 1. Marketplaces View
-function views.render_marketplaces(engine, registry, state)
+function views.render_marketplaces(engine, registry, env_mgr, state)
   local width = engine.cols
   local split_col = math.floor(width * 0.45)
   local main_h = engine.rows - 5
+
+  -- Cache installed set for quick cross-reference
+  local installed_set = {}
+  local summary = env_mgr:list_all()
+  for _, target in ipairs(summary) do
+    if target.servers then
+      for sname, _ in pairs(target.servers) do
+        installed_set[sname:lower()] = true
+        installed_set[sname:lower():gsub("[^%w]", "")] = true
+      end
+    end
+  end
+
+  local function is_installed(item)
+    if not item then
+      return false
+    end
+    local id_clean = item.id and item.id:lower():gsub("^mcp%-", "") or ""
+    local name_clean = item.name and item.name:lower():gsub("[^%w]", "") or ""
+    local base_clean = item.name and item.name:lower():match("^([^%s/]+)") or ""
+
+    return installed_set[id_clean]
+      or installed_set[name_clean]
+      or installed_set[base_clean]
+      or (item.command and installed_set[item.command:lower()])
+      or (item.args and #item.args > 0 and installed_set[item.args[#item.args]:lower()])
+  end
 
   -- Left: List of MCPs
   local box_title = "Marketplace Catalog"
@@ -28,8 +55,8 @@ function views.render_marketplaces(engine, registry, state)
   end
 
   widgets.draw_list(engine, items, state.selected_mcp_idx, 4, 2, main_h, split_col - 2, function(item, _)
-    local tag = item.source and string.format("[%s]", item.source:upper()) or ""
-    return string.format("%-12s %s", tag, item.name)
+    local status_badge = is_installed(item) and "[INSTALLED]" or "[AVAILABLE]"
+    return string.format("%-11s %s", status_badge, item.name)
   end)
 
   -- Right: Detail Card of selected MCP
@@ -48,8 +75,13 @@ function views.render_marketplaces(engine, registry, state)
   )
 
   if selected then
+    local installed = is_installed(selected)
     local r = 6
     engine:draw_text(r, right_col + 2, "Package:     " .. selected.name, term.palette.fg_cyan .. term.colors.bold)
+    r = r + 1
+    local status_color = installed and term.palette.fg_neon_green or term.palette.fg_amber
+    local status_text = installed and "INSTALLED (Registered in AI Agents)" or "NOT INSTALLED (Ephemeral Only)"
+    engine:draw_text(r, right_col + 2, "Agent Status:" .. status_text, status_color .. term.colors.bold)
     r = r + 1
     engine:draw_text(r, right_col + 2, "Registry:    " .. (selected.source or "unknown"), term.palette.fg_primary)
     r = r + 1
@@ -58,7 +90,7 @@ function views.render_marketplaces(engine, registry, state)
     engine:draw_text(r, right_col + 2, "Category:    " .. (selected.category or "General"), term.palette.fg_muted)
     r = r + 2
 
-    engine:draw_text(r, right_col + 2, "Ephemeral Run Command (No Global Install):", term.palette.fg_amber)
+    engine:draw_text(r, right_col + 2, "Ephemeral Run Command (Zero Disk Footprint):", term.palette.fg_amber)
     r = r + 1
     local full_cmd = selected.command .. " " .. table.concat(selected.args or {}, " ")
     engine:draw_text(r, right_col + 4, "$ " .. term.truncate(full_cmd, right_w - 6), term.palette.fg_neon_green)
@@ -74,27 +106,35 @@ function views.render_marketplaces(engine, registry, state)
     end
 
     local bottom_row = 3 + main_h
+    if bottom_row - 2 > r then
+      engine:draw_text(
+        bottom_row - 2,
+        right_col + 2,
+        term.truncate("Press [Enter] Ephemeral Run │ [I] Install to Agents", right_w - 4),
+        term.palette.fg_magenta .. term.colors.bold
+      )
+    end
     if bottom_row - 1 > r then
       engine:draw_text(
         bottom_row - 1,
         right_col + 2,
-        term.truncate("Press [Enter] Ephemeral Run │ [I] Install to Agents", right_w - 4),
-        term.palette.fg_magenta .. term.colors.bold
+        term.truncate("Press [D] / [Del] Remove from All Agents", right_w - 4),
+        term.palette.fg_red .. term.colors.bold
       )
     end
     if bottom_row > r then
       engine:draw_text(
         bottom_row,
         right_col + 2,
-        term.truncate("Press [D] Remove from All Agents", right_w - 4),
-        term.palette.fg_red .. term.colors.bold
+        term.truncate("Press [R] Live Sync Registries (150+ MCPs)", right_w - 4),
+        term.palette.fg_cyan .. term.colors.bold
       )
     end
   else
     engine:draw_text(
       6,
       right_col + 2,
-      "No matching MCP found. Press [/] to search or [R] to refresh.",
+      "No matching MCP found. Press [/] to search or [R] to sync marketplaces.",
       term.palette.fg_muted
     )
   end
@@ -199,76 +239,104 @@ function views.render_ai_synth(engine, config, state)
 
   engine:draw_text(r, 4, "Active AI Provider:  " .. prov:upper(), term.palette.fg_cyan .. term.colors.bold)
   r = r + 1
-  engine:draw_text(r, 4, "Model:               " .. model, term.palette.fg_magenta .. term.colors.bold)
+  engine:draw_text(r, 4, "Configured Model:    " .. model, term.palette.fg_purple)
   r = r + 2
 
   engine:draw_text(r, 4, "Prompt Input:", term.palette.fg_primary .. term.colors.bold)
   r = r + 1
-  local prompt_display = state.ai_prompt or "Say hello and test tool execution"
-  engine:draw_text(r, 6, "> " .. prompt_display, term.palette.fg_neon_green)
+  engine:draw_text(r, 6, "> " .. (state.ai_prompt or "(none)"), term.palette.fg_amber)
   r = r + 2
 
-  engine:draw_text(r, 4, "AI Synthesis Stream & Result:", term.palette.fg_amber .. term.colors.bold)
+  engine:draw_text(r, 4, "AI Synthesis Output:", term.palette.fg_neon_green .. term.colors.bold)
   r = r + 1
-
   if state.ai_response then
     local lines = {}
-    for line in state.ai_response:gmatch("([^\r\n]+)") do
+    for line in state.ai_response:gmatch("[^\r\n]+") do
       table.insert(lines, line)
     end
-    for idx, l in ipairs(lines) do
-      if r + idx > main_h + 2 then
-        break
+    for _, l in ipairs(lines) do
+      if r < engine.rows - 2 then
+        engine:draw_text(r, 6, term.truncate(l, width - 10), term.palette.fg_primary)
+        r = r + 1
       end
-      engine:draw_text(r + idx, 6, term.truncate(l, width - 12), term.palette.fg_primary)
     end
   else
-    engine:draw_text(
-      r + 1,
-      6,
-      "Press [Enter] to run prompt synthesis through " .. model .. "...",
-      term.palette.fg_muted
-    )
+    engine:draw_text(r, 6, "(Press [Enter] to run test synthesis query with configured model)", term.palette.fg_muted)
   end
 end
 
--- 4. Ephemeral History View (Zero Persistent Install)
-function views.render_history(engine, history_mgr, state)
+-- 4. Ephemeral History View
+function views.render_history(engine, history, state)
   local width = engine.cols
   local main_h = engine.rows - 5
+  local split_col = math.floor(width * 0.45)
 
-  local title =
-    string.format("Ephemeral MCP History (%d sessions) - [C] Clean All | [X] Clean Stale (>24h)", history_mgr:count())
-  engine:draw_box(4, 2, main_h, width - 4, term.palette.border, term.palette.bg_dark, title)
+  engine:draw_box(
+    4,
+    2,
+    main_h,
+    split_col - 2,
+    term.palette.border,
+    term.palette.bg_dark,
+    "Ephemeral History (Zero-Install)"
+  )
 
-  local items = history_mgr:list()
+  local items = history:list()
   state.history_items = items
 
-  if #items == 0 then
-    engine:draw_text(6, 4, "No MCP test history recorded yet.", term.palette.fg_muted)
-    engine:draw_text(
-      8,
-      4,
-      "All ephemeral MCP sessions appear here and can be cleaned anytime.",
-      term.palette.fg_primary
-    )
-    return
+  if state.selected_history_idx > #items then
+    state.selected_history_idx = math.max(1, #items)
   end
 
-  widgets.draw_list(engine, items, state.selected_history_idx or 1, 4, 2, main_h, width - 4, function(item, _)
-    local status_color = item.status == "ok" and "[OK]" or "[FAIL]"
-    return string.format(
-      "%-6s │ %-19s │ %-24s │ %-8s │ Tools: %d",
-      status_color,
-      item.time_formatted or "unknown",
-      term.truncate(item.name or "session", 24),
-      item.duration_ms and (tostring(item.duration_ms) .. "ms") or "-",
-      item.tools_count or 0
+  if #items == 0 then
+    engine:draw_text(6, 4, "No recent sessions. Clean state.", term.palette.fg_muted)
+  else
+    widgets.draw_list(engine, items, state.selected_history_idx, 4, 2, main_h, split_col - 2, function(item, _)
+      local status_icon = (item.status == "ok") and "✓" or "✗"
+      return string.format("%s %-14s [%s]", status_icon, item.name, item.time_formatted or "-")
+    end)
+  end
+
+  -- Right: History session inspector
+  local right_col = split_col + 1
+  local right_w = width - right_col
+  local selected = items[state.selected_history_idx]
+
+  engine:draw_box(4, right_col, main_h, right_w, term.palette.border, term.palette.bg_dark, "Session Trace")
+
+  if selected then
+    local r = 6
+    engine:draw_text(r, right_col + 2, "Session:     " .. selected.name, term.palette.fg_cyan .. term.colors.bold)
+    r = r + 1
+    engine:draw_text(r, right_col + 2, "Timestamp:   " .. (selected.time_formatted or "-"), term.palette.fg_primary)
+    r = r + 1
+    engine:draw_text(r, right_col + 2, "Status:      " .. (selected.status or "unknown"), term.palette.fg_neon_green)
+    r = r + 1
+    engine:draw_text(r, right_col + 2, "Tools Found: " .. tostring(selected.tools_count or 0), term.palette.fg_amber)
+    r = r + 2
+
+    engine:draw_text(r, right_col + 2, "Command Executed:", term.palette.fg_primary .. term.colors.bold)
+    r = r + 1
+    engine:draw_text(
+      r,
+      right_col + 4,
+      "$ " .. term.truncate(selected.command or "", right_w - 6),
+      term.palette.fg_muted
     )
-  end)
+
+    local bottom_row = 3 + main_h
+    if bottom_row > r then
+      engine:draw_text(
+        bottom_row,
+        right_col + 2,
+        term.truncate("Press [C] Clean All History │ [X] Purge >24h", right_w - 4),
+        term.palette.fg_red .. term.colors.bold
+      )
+    end
+  end
 end
 
--- 5. Hybrid TOML Settings View
+-- 5. TOML Settings View
 function views.render_settings(engine, config, state)
   local width = engine.cols
   local main_h = engine.rows - 5
@@ -280,22 +348,21 @@ function views.render_settings(engine, config, state)
     width - 4,
     term.palette.border,
     term.palette.bg_dark,
-    "Hybrid TOML Configuration Editor (Live Reload)"
+    "TOML Configuration (bassmachine.toml)"
   )
 
   local settings_keys = {
     { key = "general.app_name", label = "App Name", type = "string" },
-    { key = "general.auto_clean_history", label = "Auto-Clean History", type = "boolean" },
+    { key = "general.auto_clean_history", label = "Auto Clean History", type = "boolean" },
     { key = "general.max_history_entries", label = "Max History Entries", type = "number" },
-    { key = "general.history_retention_hours", label = "Retention Hours", type = "number" },
-    { key = "ui.theme", label = "UI Theme", type = "string" },
-    { key = "ui.bass_meter", label = "Bass Meter Equalizer", type = "boolean" },
+    { key = "general.history_retention_hours", label = "History Retention (h)", type = "number" },
+    { key = "ui.frame_rate", label = "TUI Target FPS", type = "number" },
+    { key = "ui.bass_meter", label = "Bass Meter Animation", type = "boolean" },
     { key = "ai.default_provider", label = "Default AI Provider", type = "string" },
     { key = "ai.default_model", label = "Default AI Model", type = "string" },
-    { key = "ai.temperature", label = "Temperature", type = "number" },
-    { key = "providers.zenmux.base_url", label = "ZenMux URL", type = "string" },
-    { key = "providers.zenmux.default_model", label = "ZenMux Model", type = "string" },
-    { key = "providers.openrouter.default_model", label = "OpenRouter Model", type = "string" },
+    { key = "ai.providers.zenmux.api_key", label = "ZenMux API Key", type = "string" },
+    { key = "ai.providers.zenmux.default_model", label = "ZenMux Model", type = "string" },
+    { key = "ai.providers.openrouter.default_model", label = "OpenRouter Model", type = "string" },
   }
 
   state.settings_keys = settings_keys

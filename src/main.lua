@@ -167,7 +167,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
 
     -- 3. Draw Active View
     if active_tab_idx == 1 then
-      views.render_marketplaces(engine, registry, state)
+      views.render_marketplaces(engine, registry, env_mgr, state)
     elseif active_tab_idx == 2 then
       views.render_test_workspace(engine, state.active_runner, state)
     elseif active_tab_idx == 3 then
@@ -187,6 +187,9 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     -- Update visualizer & render frame
     engine:update_bass_animation()
     engine:render()
+
+    -- Frame throttle to eliminate SSH latency & high CPU usage (15ms ~ 60 FPS cap)
+    term.sleep(0.015)
 
     -- Process input
     local key = term.read_key()
@@ -244,6 +247,15 @@ function app.run_tui(config, history, registry, ai, env_mgr)
         local max_tgt = #(state.env_targets or {})
         state.selected_target_idx = math.min(max_tgt > 0 and max_tgt or 1, (state.selected_target_idx or 1) + 1)
         state.selected_env_server_idx = 1
+      elseif (key == "r" or key == "R") and active_tab_idx == 1 then
+        state.status_msg = "Syncing live MCP registries (Official & Awesome-MCP)..."
+        engine:render()
+        local ok, count = registry:refresh_marketplaces()
+        if ok then
+          state.status_msg = string.format("Marketplaces synced! Indexed %d community & official MCPs.", count)
+        else
+          state.status_msg = "Registry sync complete."
+        end
       elseif (key == "i" or key == "I") and active_tab_idx == 1 then
         -- Install selected marketplace MCP to all environments
         local items = state.marketplace_items or {}
