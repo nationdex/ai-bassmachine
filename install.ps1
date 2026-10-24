@@ -8,7 +8,7 @@ $RepoUrl = "https://github.com/nationdex/mcp-bassmachine.git"
 $UserHome = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { "." }
 $InstallDir = if ($env:MCP_BASSMACHINE_HOME) { $env:MCP_BASSMACHINE_HOME } else { "$UserHome\.mcp-bassmachine" }
 $BinDir = if ($env:MCP_BASSMACHINE_BIN) { $env:MCP_BASSMACHINE_BIN } else { "$UserHome\.local\bin" }
-$StandaloneLuaDir = "$InstallDir\bin\lua54"
+$StandaloneLuaDir = "$UserHome\.mcp-bassmachine-lua\bin"
 
 Write-Host "🎛  Installing MCP Bass Machine for Windows..." -ForegroundColor Cyan
 
@@ -32,6 +32,10 @@ function Find-LuaCommand {
         "$StandaloneLuaDir\luajit.exe",
         "$StandaloneLuaDir\lua54.exe",
         "$StandaloneLuaDir\lua.exe",
+        "$InstallDir\bin\lua54\lua54.exe",
+        "$InstallDir\bin\lua54\lua.exe",
+        "$BinDir\lua54\lua54.exe",
+        "$BinDir\lua54\lua.exe",
         "$env:ProgramFiles\Lua\lua.exe",
         "$env:ProgramFiles\Lua\bin\lua.exe",
         "${env:ProgramFiles(x86)}\Lua\lua.exe",
@@ -55,10 +59,12 @@ $LuaPath = Find-LuaCommand
 if (-not $LuaPath) {
     Write-Host "Notice: Lua not detected in PATH. Attempting automated installation..." -ForegroundColor Yellow
 
-    # Try winget first with accurate IDs
+    # Try winget first with verified IDs from winget repository
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         Write-Host "Trying winget package managers..." -ForegroundColor Cyan
         $wingetPackages = @(
+            "DEVCOM.LuaJIT",
+            "DEVCOM.Lua",
             "rweichler.lua",
             "Lua.Lua",
             "Scoop.Scoop"
@@ -184,7 +190,7 @@ try {
     [Console]::InputEncoding = [System.Text.Encoding]::UTF8
     `$OutputEncoding = [System.Text.Encoding]::UTF8
 
-    # Win32 Console Raw VT Mode initialization
+    # Win32 Console Raw VT Mode initialization (silent execution)
     try {
         `$win32 = Add-Type -MemberDefinition @'
 [DllImport("kernel32.dll", SetLastError = true)]
@@ -199,21 +205,35 @@ public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
         `$hOut = `$win32::GetStdHandle(-11)
         [uint32]`$origIn = 0
         [uint32]`$origOut = 0
-        `$win32::GetConsoleMode(`$hIn, [ref]`$origIn)
-        `$win32::GetConsoleMode(`$hOut, [ref]`$origOut)
+        `$null = `$win32::GetConsoleMode(`$hIn, [ref]`$origIn)
+        `$null = `$win32::GetConsoleMode(`$hOut, [ref]`$origOut)
 
         # Output: ENABLE_PROCESSED_OUTPUT (1) | ENABLE_VIRTUAL_TERMINAL_PROCESSING (4)
-        `$win32::SetConsoleMode(`$hOut, `$origOut -bor 0x0005)
+        `$null = `$win32::SetConsoleMode(`$hOut, `$origOut -bor 0x0005)
         # Input: ENABLE_VIRTUAL_TERMINAL_INPUT (0x0200 = 512), disable LINE (2), ECHO (4), PROCESSED (1)
-        `$win32::SetConsoleMode(`$hIn, (`$origIn -band (-bnot 7)) -bor 0x0200)
+        `$null = `$win32::SetConsoleMode(`$hIn, (`$origIn -band (-bnot 7)) -bor 0x0200)
     } catch {}
 
-    & "$LuaPath" src\main.lua @args
+    # Dynamic Lua executable resolution
+    `$runLua = "$LuaPath"
+    if (-not (Test-Path `$runLua -ErrorAction SilentlyContinue)) {
+        foreach (`$cand in @("luajit", "lua", "lua54", "lua5.4", "$StandaloneLuaDir\lua54.exe", "$StandaloneLuaDir\luajit.exe", "$StandaloneLuaDir\lua.exe")) {
+            if (Get-Command `$cand -ErrorAction SilentlyContinue) {
+                `$runLua = `$cand
+                break
+            } elseif (Test-Path `$cand -ErrorAction SilentlyContinue) {
+                `$runLua = `$cand
+                break
+            }
+        }
+    }
+
+    & `$runLua src\main.lua @args
 } finally {
     try {
         if (`$win32 -and `$origIn -ne 0) {
-            `$win32::SetConsoleMode(`$hIn, `$origIn)
-            `$win32::SetConsoleMode(`$hOut, `$origOut)
+            `$null = `$win32::SetConsoleMode(`$hIn, `$origIn)
+            `$null = `$win32::SetConsoleMode(`$hOut, `$origOut)
         }
     } catch {}
     Pop-Location
