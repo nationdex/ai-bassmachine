@@ -81,7 +81,7 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
     r = r + 1
     local status_color = installed and term.palette.fg_neon_green or term.palette.fg_amber
     local status_text = installed and "INSTALLED (Registered in AI Agents)" or "NOT INSTALLED (Ephemeral Only)"
-    engine:draw_text(r, right_col + 2, "Agent Status:" .. status_text, status_color .. term.colors.bold)
+    engine:draw_text(r, right_col + 2, "Agent Status: " .. status_text, status_color .. term.colors.bold)
     r = r + 1
     engine:draw_text(r, right_col + 2, "Registry:    " .. (selected.source or "unknown"), term.palette.fg_primary)
     r = r + 1
@@ -126,7 +126,7 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
       engine:draw_text(
         bottom_row,
         right_col + 2,
-        term.truncate("Press [R] Live Sync Registries (150+ MCPs)", right_w - 4),
+        term.truncate("Press [/] Search/Filter │ [R] Sync Marketplaces", right_w - 4),
         term.palette.fg_cyan .. term.colors.bold
       )
     end
@@ -159,7 +159,7 @@ function views.render_test_workspace(engine, active_runner, state)
   if not active_runner or not active_runner.is_running then
     engine:draw_text(6, 4, "No active ephemeral MCP runner.", term.palette.fg_muted)
     engine:draw_text(8, 4, "Go to [1: Marketplaces] and press [Enter],", term.palette.fg_primary)
-    engine:draw_text(9, 4, "or press [R] to run an ephemeral command.", term.palette.fg_cyan)
+    engine:draw_text(9, 4, "or press [R] to spawn an ephemeral runner.", term.palette.fg_cyan)
     return
   end
 
@@ -242,9 +242,9 @@ function views.render_ai_synth(engine, config, state)
   engine:draw_text(r, 4, "Configured Model:    " .. model, term.palette.fg_purple)
   r = r + 2
 
-  engine:draw_text(r, 4, "Prompt Input:", term.palette.fg_primary .. term.colors.bold)
+  engine:draw_text(r, 4, "Prompt Input (Press [E] to edit prompt):", term.palette.fg_primary .. term.colors.bold)
   r = r + 1
-  engine:draw_text(r, 6, "> " .. (state.ai_prompt or "(none)"), term.palette.fg_amber)
+  engine:draw_text(r, 6, "> " .. term.truncate(state.ai_prompt or "(none)", width - 12), term.palette.fg_amber)
   r = r + 2
 
   engine:draw_text(r, 4, "AI Synthesis Output:", term.palette.fg_neon_green .. term.colors.bold)
@@ -261,7 +261,7 @@ function views.render_ai_synth(engine, config, state)
       end
     end
   else
-    engine:draw_text(r, 6, "(Press [Enter] to run test synthesis query with configured model)", term.palette.fg_muted)
+    engine:draw_text(r, 6, "(Press [Enter] to run synthesis query, [E] to change prompt text)", term.palette.fg_muted)
   end
 end
 
@@ -348,7 +348,7 @@ function views.render_settings(engine, config, state)
     width - 4,
     term.palette.border,
     term.palette.bg_dark,
-    "TOML Configuration (bassmachine.toml)"
+    "Hybrid TOML Configuration (bassmachine.toml)"
   )
 
   local settings_keys = {
@@ -389,8 +389,8 @@ function views.render_settings(engine, config, state)
     engine:draw_text(
       3 + main_h,
       4,
-      term.truncate("Press [Space] toggle bool, [Enter] edit, [S] save TOML", width - 8),
-      term.palette.fg_muted
+      term.truncate("Press [Enter]/[E] Edit Value │ [Space] Toggle Bool │ [S] Save TOML", width - 8),
+      term.palette.fg_cyan .. term.colors.bold
     )
   end
 end
@@ -497,11 +497,19 @@ function views.render_env_manager(engine, env_mgr, state)
     end
 
     local bottom_row = 3 + main_h
+    if bottom_row - 2 > 5 then
+      engine:draw_text(
+        bottom_row - 2,
+        right_col + 2,
+        term.truncate("Press [A] Add Custom MCP to this Agent", right_w - 4),
+        term.palette.fg_neon_green .. term.colors.bold
+      )
+    end
     if bottom_row - 1 > 5 then
       engine:draw_text(
         bottom_row - 1,
         right_col + 2,
-        term.truncate("Press [D] / [Del] to Remove from this Agent", right_w - 4),
+        term.truncate("Press [D] / [Del] Remove from this Agent", right_w - 4),
         term.palette.fg_red .. term.colors.bold
       )
     end
@@ -509,7 +517,7 @@ function views.render_env_manager(engine, env_mgr, state)
       engine:draw_text(
         bottom_row,
         right_col + 2,
-        term.truncate("Press [U] to Purge from ALL Agents", right_w - 4),
+        term.truncate("Press [U] Purge from ALL Agents", right_w - 4),
         term.palette.fg_amber .. term.colors.bold
       )
     end

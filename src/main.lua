@@ -14,6 +14,7 @@ local HistoryManager = require("mcp-bassmachine.mcp.history")
 local McpRunner = require("mcp-bassmachine.mcp.runner")
 local AiProvider = require("mcp-bassmachine.ai.provider")
 local EnvManager = require("mcp-bassmachine.env.manager")
+local json = require("mcp-bassmachine.utils.json")
 
 local app = {}
 
@@ -149,6 +150,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     ai_response = nil,
     status_msg = "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
     active_runner = nil,
+    modal = nil,
   }
 
   local running = true
@@ -180,8 +182,31 @@ function app.run_tui(config, history, registry, ai, env_mgr)
       views.render_env_manager(engine, env_mgr, state)
     end
 
-    -- 4. Draw Status Bar
-    local hotkeys = "[1-6] Tabs │ [↑/↓] Navigate │ [I] Install │ [D] Remove │ [Q] Quit"
+    -- 4. Draw Modal Overlay if active
+    if state.modal then
+      widgets.draw_modal_input(engine, state.modal.title, state.modal.prompt, state.modal.value, #state.modal.value)
+    end
+
+    -- 5. Draw Status Bar
+    local hotkeys = "[1-6] Tabs │ [↑/↓] Navigate │ [Enter] Select/Run │ [Q] Quit"
+    if active_tab_idx == 1 then
+      hotkeys = "[Enter] Run │ [I] Install │ [D] Del │ [/] Search │ [R] Sync"
+    elseif active_tab_idx == 2 then
+      hotkeys = "[X] Call Tool │ [R] Spawn Runner │ [K] Stop Runner"
+    elseif active_tab_idx == 3 then
+      hotkeys = "[Enter] Synthesize │ [E] Edit Prompt"
+    elseif active_tab_idx == 4 then
+      hotkeys = "[C] Clean All │ [X] Purge >24h"
+    elseif active_tab_idx == 5 then
+      hotkeys = "[Enter]/[E] Edit │ [Space] Toggle │ [S] Save TOML"
+    elseif active_tab_idx == 6 then
+      hotkeys = "[←/→] Agent │ [D] Remove │ [U] Purge All │ [A] Add MCP"
+    end
+
+    if state.modal then
+      hotkeys = "[Enter] Confirm │ [Esc] Cancel │ [Backspace] Edit"
+    end
+
     widgets.draw_status_bar(engine, state.status_msg, hotkeys)
 
     -- Update visualizer & render frame
@@ -194,166 +219,380 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     -- Process input
     local key = term.read_key()
     if key then
-      if key == "q" or key == "ctrl_c" then
-        running = false
-      elseif key == "1" then
-        active_tab_idx = 1
-      elseif key == "2" then
-        active_tab_idx = 2
-      elseif key == "3" then
-        active_tab_idx = 3
-      elseif key == "4" then
-        active_tab_idx = 4
-      elseif key == "5" then
-        active_tab_idx = 5
-      elseif key == "6" then
-        active_tab_idx = 6
-      elseif key == "tab" then
-        active_tab_idx = (active_tab_idx % #tabs) + 1
-      elseif key == "up" then
-        if active_tab_idx == 1 then
-          state.selected_mcp_idx = math.max(1, state.selected_mcp_idx - 1)
-        elseif active_tab_idx == 2 then
-          state.selected_tool_idx = math.max(1, state.selected_tool_idx - 1)
-        elseif active_tab_idx == 4 then
-          state.selected_history_idx = math.max(1, state.selected_history_idx - 1)
-        elseif active_tab_idx == 5 then
-          state.selected_setting_idx = math.max(1, state.selected_setting_idx - 1)
-        elseif active_tab_idx == 6 then
-          state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
-        end
-      elseif key == "down" then
-        if active_tab_idx == 1 then
-          local max_m = #(state.marketplace_items or {})
-          state.selected_mcp_idx = math.min(max_m > 0 and max_m or 1, state.selected_mcp_idx + 1)
-        elseif active_tab_idx == 2 then
-          local max_t = #(state.active_tools or {})
-          state.selected_tool_idx = math.min(max_t > 0 and max_t or 1, state.selected_tool_idx + 1)
-        elseif active_tab_idx == 4 then
-          local max_h = #(state.history_items or {})
-          state.selected_history_idx = math.min(max_h > 0 and max_h or 1, state.selected_history_idx + 1)
-        elseif active_tab_idx == 5 then
-          local max_s = #(state.settings_keys or {})
-          state.selected_setting_idx = math.min(max_s > 0 and max_s or 1, state.selected_setting_idx + 1)
-        elseif active_tab_idx == 6 then
-          local max_srv = #(state.current_target_servers or {})
-          state.selected_env_server_idx =
-            math.min(max_srv > 0 and max_srv or 1, (state.selected_env_server_idx or 1) + 1)
-        end
-      elseif key == "left" and active_tab_idx == 6 then
-        state.selected_target_idx = math.max(1, (state.selected_target_idx or 1) - 1)
-        state.selected_env_server_idx = 1
-      elseif key == "right" and active_tab_idx == 6 then
-        local max_tgt = #(state.env_targets or {})
-        state.selected_target_idx = math.min(max_tgt > 0 and max_tgt or 1, (state.selected_target_idx or 1) + 1)
-        state.selected_env_server_idx = 1
-      elseif (key == "r" or key == "R") and active_tab_idx == 1 then
-        state.status_msg = "Syncing live MCP registries (Official & Awesome-MCP)..."
-        engine:render()
-        local ok, count = registry:refresh_marketplaces()
-        if ok then
-          state.status_msg = string.format("Marketplaces synced! Indexed %d community & official MCPs.", count)
-        else
-          state.status_msg = "Registry sync complete."
-        end
-      elseif (key == "i" or key == "I") and active_tab_idx == 1 then
-        -- Install selected marketplace MCP to all environments
-        local items = state.marketplace_items or {}
-        local selected = items[state.selected_mcp_idx or 1]
-        if selected then
-          local spec = {
-            command = selected.command,
-            args = selected.args,
-          }
-          local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
-          local results = env_mgr:add_mcp(sname, spec, "all")
-          local ok_cnt = 0
-          for _, res in ipairs(results) do
-            if res.success then
-              ok_cnt = ok_cnt + 1
+      -- If inside a modal input dialog, capture text entry
+      if state.modal then
+        if key == "esc" or key == "double_esc" or key == "ctrl_c" then
+          state.modal = nil
+          state.status_msg = "Editing cancelled."
+        elseif key == "enter" then
+          local m = state.modal
+          if m.type == "edit_setting" then
+            local val = m.value
+            local s = m.setting
+            if s.type == "number" then
+              local num = tonumber(val)
+              if num then
+                config:set(s.key, num)
+                state.status_msg = string.format("Set %s to %s (Unsaved, press [S] to write)", s.label, tostring(num))
+              else
+                state.status_msg = "Invalid number format."
+              end
+            elseif s.type == "boolean" then
+              local b = (val:lower() == "true" or val == "1" or val:lower() == "yes")
+              config:set(s.key, b)
+              state.status_msg = string.format("Set %s to %s", s.label, tostring(b))
+            else
+              config:set(s.key, val)
+              state.status_msg = string.format("Set %s to '%s' (Press [S] to save)", s.label, val)
+            end
+          elseif m.type == "search_marketplace" then
+            state.search_query = m.value
+            state.selected_mcp_idx = 1
+            state.status_msg = #m.value > 0 and ("Filter applied: " .. m.value) or "Search filter cleared."
+          elseif m.type == "edit_prompt" then
+            state.ai_prompt = m.value
+            state.status_msg = "Updated AI prompt."
+          elseif m.type == "add_mcp_agent" then
+            local sname, cmd_str = m.value:match("^([^%s=:]+)%s*[=:]%s*(.+)$")
+            if not sname then
+              sname, cmd_str = m.value:match("^([^%s]+)%s+(.+)$")
+            end
+            if sname and cmd_str then
+              local spec = {}
+              if cmd_str:match("^https?://") then
+                spec.url = cmd_str
+              else
+                local parts = {}
+                for p in cmd_str:gmatch("%S+") do
+                  table.insert(parts, p)
+                end
+                spec.command = parts[1]
+                table.remove(parts, 1)
+                spec.args = parts
+              end
+              local targets = state.env_targets or {}
+              local cur_target = targets[state.selected_target_idx or 1]
+              local tid = cur_target and cur_target.id or "all"
+              local results = env_mgr:add_mcp(sname, spec, tid)
+              local ok_cnt = 0
+              for _, res in ipairs(results) do
+                if res.success then
+                  ok_cnt = ok_cnt + 1
+                end
+              end
+              state.status_msg = string.format("Added '%s' to %d environment(s).", sname, ok_cnt)
+            else
+              state.status_msg = "Syntax error. Use: <name> <command>"
+            end
+          elseif m.type == "spawn_runner" then
+            if #m.value > 0 then
+              if state.active_runner then
+                state.active_runner:stop()
+              end
+              state.status_msg = "Starting: " .. m.value .. "..."
+              engine:render()
+              local runner = McpRunner.new(m.value)
+              local ok, client_or_err = runner:start()
+              if ok then
+                state.active_runner = runner
+                local tools = client_or_err:list_tools() or {}
+                state.status_msg = string.format("Connected! Discovered %d tools.", #tools)
+                history:add({
+                  name = m.value:match("^%S+") or "custom",
+                  command = m.value,
+                  status = "ok",
+                  tools_count = #tools,
+                })
+              else
+                runner:stop()
+                state.status_msg = "Spawn failed: " .. tostring(client_or_err)
+              end
             end
           end
-          state.status_msg = string.format("Installed '%s' across %d AI agent environments!", sname, ok_cnt)
+          state.modal = nil
+        elseif key == "backspace" then
+          local v = state.modal.value
+          if #v > 0 then
+            state.modal.value = v:sub(1, #v - 1)
+          end
+        elseif key == "space" then
+          state.modal.value = state.modal.value .. " "
+        elseif #key == 1 and key:byte(1) >= 32 and key:byte(1) <= 126 then
+          state.modal.value = state.modal.value .. key
         end
-      elseif
-        (key == "d" or key == "D" or key == "delete" or key == "backspace")
-        and (active_tab_idx == 6 or active_tab_idx == 1)
-      then
-        if active_tab_idx == 6 then
-          -- Delete/Remove selected MCP from selected agent
-          local targets = state.env_targets or {}
-          local cur_target = targets[state.selected_target_idx or 1]
-          local s_keys = state.current_target_servers or {}
-          local cur_srv = s_keys[state.selected_env_server_idx or 1]
-          if cur_target and cur_srv then
-            env_mgr:remove_mcp(cur_srv, cur_target.id)
-            state.status_msg = string.format("Removed '%s' from %s.", cur_srv, cur_target.name)
+      else
+        -- Standard TUI Navigation
+        if key == "q" or key == "ctrl_c" then
+          running = false
+        elseif key == "1" then
+          active_tab_idx = 1
+        elseif key == "2" then
+          active_tab_idx = 2
+        elseif key == "3" then
+          active_tab_idx = 3
+        elseif key == "4" then
+          active_tab_idx = 4
+        elseif key == "5" then
+          active_tab_idx = 5
+        elseif key == "6" then
+          active_tab_idx = 6
+        elseif key == "tab" then
+          active_tab_idx = (active_tab_idx % #tabs) + 1
+        elseif key == "up" then
+          if active_tab_idx == 1 then
+            state.selected_mcp_idx = math.max(1, state.selected_mcp_idx - 1)
+          elseif active_tab_idx == 2 then
+            state.selected_tool_idx = math.max(1, state.selected_tool_idx - 1)
+          elseif active_tab_idx == 4 then
+            state.selected_history_idx = math.max(1, state.selected_history_idx - 1)
+          elseif active_tab_idx == 5 then
+            state.selected_setting_idx = math.max(1, state.selected_setting_idx - 1)
+          elseif active_tab_idx == 6 then
             state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
           end
-        elseif active_tab_idx == 1 then
-          -- In Marketplaces tab, remove selected marketplace package from ALL environments
+        elseif key == "down" then
+          if active_tab_idx == 1 then
+            local max_m = #(state.marketplace_items or {})
+            state.selected_mcp_idx = math.min(max_m > 0 and max_m or 1, state.selected_mcp_idx + 1)
+          elseif active_tab_idx == 2 then
+            local max_t = #(state.active_tools or {})
+            state.selected_tool_idx = math.min(max_t > 0 and max_t or 1, state.selected_tool_idx + 1)
+          elseif active_tab_idx == 4 then
+            local max_h = #(state.history_items or {})
+            state.selected_history_idx = math.min(max_h > 0 and max_h or 1, state.selected_history_idx + 1)
+          elseif active_tab_idx == 5 then
+            local max_s = #(state.settings_keys or {})
+            state.selected_setting_idx = math.min(max_s > 0 and max_s or 1, state.selected_setting_idx + 1)
+          elseif active_tab_idx == 6 then
+            local max_srv = #(state.current_target_servers or {})
+            state.selected_env_server_idx =
+              math.min(max_srv > 0 and max_srv or 1, (state.selected_env_server_idx or 1) + 1)
+          end
+        elseif key == "left" and active_tab_idx == 6 then
+          state.selected_target_idx = math.max(1, (state.selected_target_idx or 1) - 1)
+          state.selected_env_server_idx = 1
+        elseif key == "right" and active_tab_idx == 6 then
+          local max_tgt = #(state.env_targets or {})
+          state.selected_target_idx = math.min(max_tgt > 0 and max_tgt or 1, (state.selected_target_idx or 1) + 1)
+          state.selected_env_server_idx = 1
+        elseif (key == "r" or key == "R") and active_tab_idx == 1 then
+          state.status_msg = "Syncing live MCP registries (Official & Awesome-MCP)..."
+          engine:render()
+          local ok, count = registry:refresh_marketplaces()
+          if ok then
+            state.status_msg = string.format("Marketplaces synced! Indexed %d community & official MCPs.", count)
+          else
+            state.status_msg = "Registry sync complete."
+          end
+        elseif key == "/" and active_tab_idx == 1 then
+          state.modal = {
+            type = "search_marketplace",
+            title = "Filter Marketplace",
+            prompt = "Enter search keyword (or empty to clear):",
+            value = state.search_query or "",
+          }
+        elseif key == "enter" and active_tab_idx == 1 then
+          -- Run selected marketplace package ephemerally and switch to tab 2
           local items = state.marketplace_items or {}
           local selected = items[state.selected_mcp_idx or 1]
           if selected then
-            local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
-            -- Also try direct name or id
-            env_mgr:remove_mcp(sname, "all")
-            env_mgr:remove_mcp(selected.id, "all")
-            local clean_name = selected.id:gsub("^mcp%-", "")
-            env_mgr:remove_mcp(clean_name, "all")
-            state.status_msg = string.format("Removed '%s' from all AI agent environments.", selected.name)
+            local full_cmd = selected.command .. " " .. table.concat(selected.args or {}, " ")
+            if state.active_runner then
+              state.active_runner:stop()
+            end
+            state.status_msg = "Launching ephemeral MCP: " .. selected.name .. "..."
+            engine:render()
+            local runner = McpRunner.new(full_cmd)
+            local ok, client_or_err = runner:start()
+            if ok then
+              state.active_runner = runner
+              local tools = client_or_err:list_tools() or {}
+              history:add({
+                name = selected.name,
+                command = full_cmd,
+                status = "ok",
+                tools_count = #tools,
+              })
+              state.status_msg = string.format("Ephemeral %s running! Discovered %d tools.", selected.name, #tools)
+              active_tab_idx = 2
+            else
+              runner:stop()
+              history:add({
+                name = selected.name,
+                command = full_cmd,
+                status = "failed",
+                tools_count = 0,
+              })
+              state.status_msg = "Launch failed: " .. tostring(client_or_err)
+            end
           end
-        end
-      elseif (key == "u" or key == "U") and active_tab_idx == 6 then
-        -- Remove selected MCP from ALL agents
-        local s_keys = state.current_target_servers or {}
-        local cur_srv = s_keys[state.selected_env_server_idx or 1]
-        if cur_srv then
-          env_mgr:remove_mcp(cur_srv, "all")
-          state.status_msg = string.format("Purged '%s' from ALL AI agent environments.", cur_srv)
-          state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
-        end
-      elseif key == "c" and active_tab_idx == 4 then
-        -- Clean all history on user request
-        history:clean_all()
-        state.status_msg = "Ephemeral history cleared successfully."
-      elseif key == "x" and active_tab_idx == 4 then
-        -- Clean stale history (>24h)
-        history:clean_stale(24)
-        state.status_msg = "Stale history entries purged."
-      elseif key == "s" and active_tab_idx == 5 then
-        -- Save hybrid TOML configuration
-        local ok, s_err = config:save()
-        if ok then
-          state.status_msg = "TOML configuration saved to " .. config.config_path
-        else
-          state.status_msg = "Save failed: " .. tostring(s_err)
-        end
-      elseif key == "space" and active_tab_idx == 5 then
-        -- Toggle boolean setting
-        local s = state.settings_keys and state.settings_keys[state.selected_setting_idx]
-        if s and s.type == "boolean" then
-          local cur = config:get(s.key)
-          config:set(s.key, not cur)
-          config:save()
-          state.status_msg = "Updated " .. s.label .. " to " .. tostring(not cur)
-        end
-      elseif key == "enter" and active_tab_idx == 3 then
-        -- Trigger AI synthesis
-        state.status_msg = "Synthesizing with " .. active_model .. "..."
-        engine:render()
-        local resp, aerr = ai:chat_completion({
-          { role = "user", content = state.ai_prompt },
-        }, {
-          provider = config:get("ai.default_provider"),
-          model = active_model,
-        })
-        if resp then
-          state.ai_response = resp.content
-          state.status_msg = "Synthesis complete."
-        else
-          state.ai_response = "Error: " .. tostring(aerr)
-          state.status_msg = "AI synthesis failed."
+        elseif (key == "i" or key == "I") and active_tab_idx == 1 then
+          -- Install selected marketplace MCP to all environments
+          local items = state.marketplace_items or {}
+          local selected = items[state.selected_mcp_idx or 1]
+          if selected then
+            local spec = {
+              command = selected.command,
+              args = selected.args,
+            }
+            local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
+            local results = env_mgr:add_mcp(sname, spec, "all")
+            local ok_cnt = 0
+            for _, res in ipairs(results) do
+              if res.success then
+                ok_cnt = ok_cnt + 1
+              end
+            end
+            state.status_msg = string.format("Installed '%s' across %d AI agent environments!", sname, ok_cnt)
+          end
+        elseif
+          (key == "d" or key == "D" or key == "delete" or key == "backspace")
+          and (active_tab_idx == 6 or active_tab_idx == 1)
+        then
+          if active_tab_idx == 6 then
+            -- Delete/Remove selected MCP from selected agent
+            local targets = state.env_targets or {}
+            local cur_target = targets[state.selected_target_idx or 1]
+            local s_keys = state.current_target_servers or {}
+            local cur_srv = s_keys[state.selected_env_server_idx or 1]
+            if cur_target and cur_srv then
+              env_mgr:remove_mcp(cur_srv, cur_target.id)
+              state.status_msg = string.format("Removed '%s' from %s.", cur_srv, cur_target.name)
+              state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
+            end
+          elseif active_tab_idx == 1 then
+            -- In Marketplaces tab, remove selected marketplace package from ALL environments
+            local items = state.marketplace_items or {}
+            local selected = items[state.selected_mcp_idx or 1]
+            if selected then
+              local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
+              -- Also try direct name or id
+              env_mgr:remove_mcp(sname, "all")
+              env_mgr:remove_mcp(selected.id, "all")
+              local clean_name = selected.id:gsub("^mcp%-", "")
+              env_mgr:remove_mcp(clean_name, "all")
+              state.status_msg = string.format("Removed '%s' from all AI agent environments.", selected.name)
+            end
+          end
+        elseif (key == "u" or key == "U") and active_tab_idx == 6 then
+          -- Remove selected MCP from ALL agents
+          local s_keys = state.current_target_servers or {}
+          local cur_srv = s_keys[state.selected_env_server_idx or 1]
+          if cur_srv then
+            env_mgr:remove_mcp(cur_srv, "all")
+            state.status_msg = string.format("Purged '%s' from ALL AI agent environments.", cur_srv)
+            state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
+          end
+        elseif (key == "a" or key == "A") and active_tab_idx == 6 then
+          -- Add custom MCP to target agent
+          local targets = state.env_targets or {}
+          local cur_target = targets[state.selected_target_idx or 1]
+          state.modal = {
+            type = "add_mcp_agent",
+            title = "Add MCP to " .. (cur_target and cur_target.name or "Agent"),
+            prompt = "Format: <name> <command_or_url>",
+            value = "",
+          }
+        elseif (key == "r" or key == "R") and active_tab_idx == 2 then
+          state.modal = {
+            type = "spawn_runner",
+            title = "Spawn Ephemeral Runner",
+            prompt = "Command to run (zero install):",
+            value = "npx -y @modelcontextprotocol/server-filesystem /tmp",
+          }
+        elseif (key == "k" or key == "K") and active_tab_idx == 2 then
+          if state.active_runner then
+            state.active_runner:stop()
+            state.active_runner = nil
+            state.status_msg = "Ephemeral runner stopped."
+          end
+        elseif (key == "x" or key == "X") and active_tab_idx == 2 then
+          -- Execute tool call on active runner
+          if state.active_runner and state.active_runner.client then
+            local tools = state.active_tools or {}
+            local t = tools[state.selected_tool_idx or 1]
+            if t then
+              state.status_msg = "Executing tool " .. t.name .. "..."
+              engine:render()
+              local res, terr = state.active_runner.client:call_tool(t.name, {})
+              if res then
+                state.last_tool_output = json.encode(res)
+                state.status_msg = "Tool execution completed."
+              else
+                state.last_tool_output = "Error: " .. tostring(terr)
+                state.status_msg = "Tool call failed."
+              end
+            end
+          end
+        elseif (key == "e" or key == "E") and active_tab_idx == 3 then
+          state.modal = {
+            type = "edit_prompt",
+            title = "Edit AI Prompt",
+            prompt = "Enter prompt for AI model:",
+            value = state.ai_prompt or "",
+          }
+        elseif key == "c" and active_tab_idx == 4 then
+          -- Clean all history on user request
+          history:clean_all()
+          state.status_msg = "Ephemeral history cleared successfully."
+        elseif key == "x" and active_tab_idx == 4 then
+          -- Clean stale history (>24h)
+          history:clean_stale(24)
+          state.status_msg = "Stale history entries purged."
+        elseif (key == "enter" or key == "e" or key == "E") and active_tab_idx == 5 then
+          -- Edit setting value via interactive modal
+          local s = state.settings_keys and state.settings_keys[state.selected_setting_idx]
+          if s then
+            if s.type == "boolean" then
+              local cur = config:get(s.key)
+              config:set(s.key, not cur)
+              config:save()
+              state.status_msg = "Updated " .. s.label .. " to " .. tostring(not cur)
+            else
+              local cur_val = config:get(s.key)
+              state.modal = {
+                type = "edit_setting",
+                title = "Edit TOML Setting",
+                prompt = s.label .. " (" .. s.key .. "):",
+                value = tostring(cur_val or ""),
+                setting = s,
+              }
+            end
+          end
+        elseif (key == "s" or key == "S") and active_tab_idx == 5 then
+          -- Save hybrid TOML configuration
+          local ok, s_err = config:save()
+          if ok then
+            state.status_msg = "TOML configuration saved to " .. config.config_path
+          else
+            state.status_msg = "Save failed: " .. tostring(s_err)
+          end
+        elseif key == "space" and active_tab_idx == 5 then
+          -- Toggle boolean setting
+          local s = state.settings_keys and state.settings_keys[state.selected_setting_idx]
+          if s and s.type == "boolean" then
+            local cur = config:get(s.key)
+            config:set(s.key, not cur)
+            config:save()
+            state.status_msg = "Updated " .. s.label .. " to " .. tostring(not cur)
+          end
+        elseif key == "enter" and active_tab_idx == 3 then
+          -- Trigger AI synthesis
+          state.status_msg = "Synthesizing with " .. active_model .. "..."
+          engine:render()
+          local resp, aerr = ai:chat_completion({
+            { role = "user", content = state.ai_prompt },
+          }, {
+            provider = config:get("ai.default_provider"),
+            model = active_model,
+          })
+          if resp then
+            state.ai_response = resp.content
+            state.status_msg = "Synthesis complete."
+          else
+            state.ai_response = "Error: " .. tostring(aerr)
+            state.status_msg = "AI synthesis failed."
+          end
         end
       end
     end

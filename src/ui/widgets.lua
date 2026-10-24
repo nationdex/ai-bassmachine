@@ -1,5 +1,5 @@
 -- MCP Bass Machine - TUI Widgets
--- Component library for tabs, lists, details panels, status bars, and bass visualizers.
+-- Component library for tabs, lists, details panels, status bars, modals, and bass visualizers.
 
 local term = require("mcp-bassmachine.utils.term")
 
@@ -102,6 +102,45 @@ function widgets.draw_list(engine, items, selected_idx, top_row, left_col, heigh
       end
     end
   end
+end
+
+function widgets.draw_modal_input(engine, title, prompt, value, cursor_pos)
+  local box_w = math.min(70, engine.cols - 4)
+  local box_h = 7
+  local top_r = math.floor((engine.rows - box_h) / 2)
+  local left_c = math.floor((engine.cols - box_w) / 2)
+
+  local bg = term.palette.bg_card
+  local fg_border = term.palette.border_focus
+
+  engine:draw_box(top_r, left_c, box_h, box_w, fg_border, bg, title)
+
+  engine:draw_text(top_r + 2, left_c + 3, prompt, term.palette.fg_cyan .. term.colors.bold, bg)
+
+  local input_w = box_w - 6
+  local display_val = value or ""
+  local truncated_val = term.truncate(display_val, input_w - 2)
+
+  -- Input box field background
+  local input_r = top_r + 3
+  local input_bg = term.palette.bg_dark
+  for c = left_c + 3, left_c + box_w - 4 do
+    engine.buffer[input_r][c].char = " "
+    engine.buffer[input_r][c].bg = input_bg
+  end
+
+  engine:draw_text(input_r, left_c + 4, truncated_val, term.palette.fg_neon_green, input_bg)
+
+  -- Draw cursor block
+  local cur_col = left_c + 4 + math.min(#truncated_val, cursor_pos or #truncated_val)
+  if cur_col <= left_c + box_w - 4 and engine.buffer[input_r] and engine.buffer[input_r][cur_col] then
+    local cur_cell = engine.buffer[input_r][cur_col]
+    local char_under = cur_cell.char ~= "" and cur_cell.char or " "
+    engine:draw_text(input_r, cur_col, char_under, term.palette.bg_dark, term.palette.fg_cyan)
+  end
+
+  local hint = "[Enter] Confirm │ [Esc] Cancel │ [Backspace] Delete"
+  engine:draw_text(top_r + 5, left_c + 3, term.truncate(hint, box_w - 6), term.palette.fg_muted, bg)
 end
 
 return widgets
