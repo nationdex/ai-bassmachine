@@ -5,20 +5,25 @@ on:
     tags:
       - "v*.*.*"
 
+permissions:
+  contents: write
+
 jobs:
   publish:
     name: Package & Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Create Release Tarball
         run: |
           tar -czvf mcp-bassmachine-${{ github.ref_name }}.tar.gz bin/ src/ types/ bassmachine.toml LICENSE README.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
         with:
           files: mcp-bassmachine-${{ github.ref_name }}.tar.gz
         env:

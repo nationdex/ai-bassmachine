@@ -6,26 +6,29 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-format:
     name: Lint, Format & Typecheck
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Lua & Luarocks
-        uses: hishamhm/gh-actions-lua@master
+        uses: hishamhm/gh-actions-lua@56eba09993704b908cc3c7c2753e630d18cb9696 # master
         with:
           luaVersion: "5.4"
 
       - name: Setup Luarocks
-        uses: hishamhm/gh-actions-luarocks@master
+        uses: hishamhm/gh-actions-luarocks@a7c25d32890e43a1f60d87fda1431b4973b8d295 # master
 
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
+        uses: oven-sh/setup-bun@f4d14e03ff726c06358e5557344e1da148b56cf7 # v1
 
       - name: Install Stylua, Luacheck, and Teal
         run: |
@@ -48,16 +51,18 @@ jobs:
   test-matrix:
     name: Test on Lua ${{ matrix.lua-version }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         lua-version: ["5.1", "5.2", "5.3", "5.4", "luajit-openresty"]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Lua
-        uses: hishamhm/gh-actions-lua@master
+        uses: hishamhm/gh-actions-lua@56eba09993704b908cc3c7c2753e630d18cb9696 # master
         with:
           luaVersion: ${{ matrix.lua-version }}
 
