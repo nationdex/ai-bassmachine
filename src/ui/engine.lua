@@ -223,7 +223,7 @@ function Engine:render()
     end
     table.insert(out, "\27[J")
   else
-    -- High performance differential rendering: only emit ANSI cursor jumps & text for modified cells
+    -- High performance differential rendering: batch changed cells into contiguous chunks
     for r = 1, self.rows do
       local row_buf = self.buffer[r]
       local prev_row = self.prev_buffer[r]
@@ -233,18 +233,32 @@ function Engine:render()
           local cell = row_buf[c]
           local pcell = prev_row[c]
           if cell and pcell and (cell.char ~= pcell.char or cell.fg ~= pcell.fg or cell.bg ~= pcell.bg) then
-            -- Jump cursor to changed cell position
+            -- Jump cursor to start of changed run
             table.insert(out, string.format("\27[%d;%dH", r, c))
-            -- Stream contiguous run of changed cells
+            -- Stream contiguous run of changed cells (bridging small unchanged gaps <= 4 to prevent cursor jump storms)
             while c <= self.cols do
               local cur = row_buf[c]
               local pcur = prev_row[c]
               if not cur or not pcur then
                 break
               end
+
               if cur.char == pcur.char and cur.fg == pcur.fg and cur.bg == pcur.bg then
-                break
+                local next_diff = false
+                local max_peek = math.min(c + 4, self.cols)
+                for peek = c + 1, max_peek do
+                  local pk = row_buf[peek]
+                  local ppk = prev_row[peek]
+                  if pk and ppk and (pk.char ~= ppk.char or pk.fg ~= ppk.fg or pk.bg ~= ppk.bg) then
+                    next_diff = true
+                    break
+                  end
+                end
+                if not next_diff then
+                  break
+                end
               end
+
               if cur.fg ~= last_fg then
                 table.insert(out, cur.fg)
                 last_fg = cur.fg

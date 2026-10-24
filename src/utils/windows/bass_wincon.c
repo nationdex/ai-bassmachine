@@ -8,7 +8,7 @@
 
 typedef void (*push_int_fn)(void* L, long long n);
 typedef void (*push_lstring_fn)(void* L, const char* s, size_t len);
-typedef long long (*to_int_fn)(void* L, int idx);
+typedef long long (*to_int_fn)(void* L, int idx, int* isnum);
 
 static push_int_fn p_pushinteger = NULL;
 static push_lstring_fn p_pushlstring = NULL;
@@ -41,13 +41,13 @@ static void init_handles(void) {
 static void init_lua_api(void) {
     if (p_pushinteger && p_pushlstring && p_tointeger) return;
     HMODULE hMods[] = {
-        GetModuleHandle(NULL),
         GetModuleHandle("lua54.dll"),
         GetModuleHandle("lua53.dll"),
         GetModuleHandle("lua52.dll"),
         GetModuleHandle("lua51.dll"),
+        GetModuleHandle("luajit.dll"),
         GetModuleHandle("lua.dll"),
-        GetModuleHandle("luajit.dll")
+        GetModuleHandle(NULL)
     };
     for (size_t i = 0; i < sizeof(hMods)/sizeof(hMods[0]); i++) {
         if (!hMods[i]) continue;
@@ -98,7 +98,7 @@ __declspec(dllexport) int win_sleep(void* L) {
     init_lua_api();
     long long ms = 15;
     if (p_tointeger) {
-        long long val = p_tointeger(L, 1);
+        long long val = p_tointeger(L, 1, NULL);
         if (val > 0) ms = val;
     }
     Sleep((DWORD)ms);

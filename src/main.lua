@@ -155,6 +155,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
   }
 
   local running = true
+  local idle_counter = 0
 
   while running do
     local cur_r, cur_c = term.get_window_size()
@@ -214,11 +215,19 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     engine:update_bass_animation()
     engine:render()
 
-    -- Frame throttle to eliminate SSH latency & high CPU usage (15ms ~ 60 FPS cap)
-    term.sleep(0.015)
-
     -- Process all buffered input keys immediately to prevent SSH lag and delayed scrolling
     local keys = term.read_keys()
+
+    -- Adaptive V-Sync / Idle throttle:
+    -- Full 60 FPS (15ms) when keys are pressed, modal active, or runner active.
+    -- Drop to low-power ~14 FPS (70ms) when user is idle to eliminate Windows Terminal / OpenConsole named pipe congestion.
+    if #keys == 0 and not state.modal and not state.active_runner then
+      idle_counter = idle_counter + 1
+    else
+      idle_counter = 0
+    end
+    local throttle_sleep = (idle_counter > 4) and 0.070 or 0.015
+    term.sleep(throttle_sleep)
     for _, key in ipairs(keys) do
       -- If inside a modal input dialog, capture text entry
       if state.modal then
