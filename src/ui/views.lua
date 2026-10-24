@@ -47,7 +47,7 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
   end
   engine:draw_box(4, 2, main_h, split_col - 2, term.palette.border, term.palette.bg_dark, box_title)
 
-  local items = registry:search(state.search_query, state.category_filter, state.source_filter)
+  local items = registry:search(state.search_query, state.category_filter, state.source_filter, state.pricing_filter)
   state.marketplace_items = items
 
   if state.selected_mcp_idx > #items then
@@ -55,8 +55,9 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
   end
 
   widgets.draw_list(engine, items, state.selected_mcp_idx, 4, 2, main_h, split_col - 2, function(item, _)
-    local status_badge = is_installed(item) and "[INSTALLED]" or "[AVAILABLE]"
-    return string.format("%-11s %s", status_badge, item.name)
+    local status_badge = is_installed(item) and "[INST]" or "[AVAIL]"
+    local price_badge = (item.pricing == "Paid") and "[PAID]" or "[FREE]"
+    return string.format("%-7s %-6s %s", status_badge, price_badge, item.name)
   end)
 
   -- Right: Detail Card of selected MCP
@@ -88,6 +89,11 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
     engine:draw_text(r, right_col + 2, "Maintainer:  " .. (selected.author or "unknown"), term.palette.fg_muted)
     r = r + 1
     engine:draw_text(r, right_col + 2, "Category:    " .. (selected.category or "General"), term.palette.fg_muted)
+    r = r + 1
+    local price_str = (selected.pricing == "Paid") and "PAID / METERED (x402 / Micro-settlement / License)"
+      or "FREE (Open-Source / Community)"
+    local price_color = (selected.pricing == "Paid") and term.palette.fg_magenta or term.palette.fg_neon_green
+    engine:draw_text(r, right_col + 2, "License:     " .. price_str, price_color .. term.colors.bold)
     r = r + 2
 
     engine:draw_text(r, right_col + 2, "Ephemeral Run Command (Zero Disk Footprint):", term.palette.fg_amber)
@@ -126,7 +132,7 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
       engine:draw_text(
         bottom_row,
         right_col + 2,
-        term.truncate("Press [/] Search/Filter │ [R] Sync Marketplaces (300+ MCPs)", right_w - 4),
+        term.truncate("Press [/] Search │ [P] Filter Free/Paid │ [R] Sync (300+ MCPs)", right_w - 4),
         term.palette.fg_cyan .. term.colors.bold
       )
     end

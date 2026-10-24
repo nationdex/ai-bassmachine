@@ -143,6 +143,8 @@ default_model = "anthropic/claude-3.5-sonnet"
 | `↑` / `↓` | Navigate list items and menu options |
 | `Enter` | Launch ephemeral run (Tab 1), Trigger AI synthesis (Tab 3) |
 | `I` | Install selected Marketplace MCP to ALL AI Agents (Antigravity, OpenCode, Claude, etc.) |
+| `/` | Live Search / Keyword Filter for marketplace MCP listing (Tab 1) |
+| `P` | Toggle Free / Paid MCP filter in Marketplace (Tab 1) |
 | `S` / `B` | Broadcast / Install selected existent MCP to ALL AI agents (Tab 6: Agent Sync) |
 | `D` | Remove selected MCP from active agent (Tab 6: Agent Sync) |
 | `U` | Remove/Purge selected MCP from ALL AI agents (Tab 6: Agent Sync) |

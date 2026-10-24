@@ -633,6 +633,36 @@ function Registry.fetch_appcypher_mcp()
   return results
 end
 
+local function detect_server_pricing(item)
+  if item.pricing then
+    return item.pricing
+  end
+  local text = ((item.name or "") .. " " .. (item.description or "") .. " " .. table.concat(item.tags or {}, " ")):lower()
+
+  -- Check for paid indicators (x402, pay-per-call, micropayments, paid intelligence, tokens, billing)
+  if
+    text:find("x402", 1, true)
+    or text:find("pay%-per%-call")
+    or text:find("pay per call", 1, true)
+    or text:find("paid crypto", 1, true)
+    or text:find("paid intelligence", 1, true)
+    or text:find("micropayment", 1, true)
+    or text:find("usdt", 1, true)
+    or text:find("usdc", 1, true)
+    or text:find("solana payments", 1, true)
+    or text:find("subscription", 1, true)
+    or text:find("commercial license", 1, true)
+    or text:find("token cost", 1, true)
+  then
+    if
+      not (text:find("free tier", 1, true) or text:find("100%% free", 1, true) or text:find("open source", 1, true))
+    then
+      return "Paid"
+    end
+  end
+  return "Free"
+end
+
 function Registry:get_all()
   local items = {}
   local seen = {}
@@ -641,6 +671,7 @@ function Registry:get_all()
   for _, item in ipairs(CURATED_CATALOG) do
     if not seen[item.name] then
       seen[item.name] = true
+      item.pricing = item.pricing or detect_server_pricing(item)
       table.insert(items, item)
     end
   end
@@ -649,6 +680,7 @@ function Registry:get_all()
   for _, item in ipairs(self.cache) do
     if not seen[item.name] then
       seen[item.name] = true
+      item.pricing = item.pricing or detect_server_pricing(item)
       table.insert(items, item)
     end
   end
@@ -656,12 +688,13 @@ function Registry:get_all()
   return items
 end
 
-function Registry:search(query, category, source_filter)
+function Registry:search(query, category, source_filter, pricing_filter)
   local all = self:get_all()
   if
     (not query or query == "")
     and (not category or category == "All")
     and (not source_filter or source_filter == "All")
+    and (not pricing_filter or pricing_filter == "All")
   then
     return all
   end
@@ -675,6 +708,9 @@ function Registry:search(query, category, source_filter)
       match = false
     end
     if source_filter and source_filter ~= "All" and item.source ~= source_filter then
+      match = false
+    end
+    if pricing_filter and pricing_filter ~= "All" and (item.pricing or "Free") ~= pricing_filter then
       match = false
     end
     if query ~= "" then

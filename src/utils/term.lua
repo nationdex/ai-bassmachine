@@ -52,7 +52,7 @@ end
 local cached_rows = 24
 local cached_cols = 80
 local last_size_check = 0
-local size_poll_interval = 0.5 -- Only spawn stty every 500ms maximum to prevent latency
+local size_poll_interval = 0.5 -- Only query stty size every 500ms maximum to prevent CPU latency
 
 function term.get_window_size(force)
   local now
@@ -101,7 +101,7 @@ function term.sleep(seconds)
   if ok and socket and socket.sleep then
     socket.sleep(seconds)
   else
-    -- Fallback portable non-busy sleep via read timeout in raw mode or os.execute
+    -- Fallback non-busy sleep
     local ms = math.floor(seconds * 1000)
     if ms > 0 then
       os.execute(string.format("sleep %f 2>/dev/null || sleep 1 2>/dev/null", seconds))
@@ -139,88 +139,150 @@ function term.exit_raw_mode()
   end
 end
 
--- Read a single key or escape sequence non-blockingly
-function term.read_key()
-  local c = io.read(1)
-  if not c then
-    return nil
-  end
+local input_buffer = {}
 
-  if c == "\27" then
-    local c2 = io.read(1)
-    if not c2 then
-      return "esc"
-    end
-    if c2 == "[" then
-      local seq = ""
-      while true do
-        local cn = io.read(1)
-        if not cn then
-          break
+local function parse_keys_from_chunk(stream)
+  local keys = {}
+  local i = 1
+  local len = #stream
+
+  while i <= len do
+    local c = stream:sub(i, i)
+    if c == "\27" then
+      if i + 1 > len then
+        table.insert(keys, "esc")
+        i = i + 1
+      elseif stream:sub(i + 1, i + 1) == "[" then
+        -- CSI escape sequence
+        local seq_end = nil
+        for j = i + 2, len do
+          local b = stream:byte(j)
+          if (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 126 then
+            seq_end = j
+            break
+          end
         end
-        seq = seq .. cn
-        if (cn >= "A" and cn <= "Z") or cn == "~" or (cn >= "a" and cn <= "z") then
-          break
+        if seq_end then
+          local seq = stream:sub(i + 2, seq_end)
+          i = seq_end + 1
+          if seq == "A" then
+            table.insert(keys, "up")
+          elseif seq == "B" then
+            table.insert(keys, "down")
+          elseif seq == "C" then
+            table.insert(keys, "right")
+          elseif seq == "D" then
+            table.insert(keys, "left")
+          elseif seq == "H" then
+            table.insert(keys, "home")
+          elseif seq == "F" then
+            table.insert(keys, "end")
+          elseif seq == "3~" then
+            table.insert(keys, "delete")
+          elseif seq == "5~" then
+            table.insert(keys, "page_up")
+          elseif seq == "6~" then
+            table.insert(keys, "page_down")
+          elseif seq:sub(1, 1) == "<" then
+            local btn, col, row, act = seq:match("<(%d+);(%d+);(%d+)([Mm])")
+            if btn and col and row then
+              table.insert(keys, "mouse_" .. tostring(btn) .. "_" .. act)
+            end
+          else
+            table.insert(keys, "esc_" .. seq)
+          end
+        else
+          table.insert(keys, "esc")
+          i = i + 1
+        end
+      else
+        local c2 = stream:sub(i + 1, i + 1)
+        i = i + 2
+        if c2 == "\27" then
+          table.insert(keys, "double_esc")
+        else
+          table.insert(keys, "alt_" .. c2)
         end
       end
-      if seq == "A" then
-        return "up"
-      elseif seq == "B" then
-        return "down"
-      elseif seq == "C" then
-        return "right"
-      elseif seq == "D" then
-        return "left"
-      elseif seq == "H" then
-        return "home"
-      elseif seq == "F" then
-        return "end"
-      elseif seq == "3~" then
-        return "delete"
-      elseif seq == "5~" then
-        return "page_up"
-      elseif seq == "6~" then
-        return "page_down"
-      elseif seq:sub(1, 1) == "<" then
-        -- SGR mouse event
-        local btn, col, row, act = seq:match("<(%d+);(%d+);(%d+)([Mm])")
-        if btn and col and row then
-          return "mouse", tonumber(btn), tonumber(col), tonumber(row), act
-        end
-      end
-      return "esc_" .. seq
-    elseif c2 == "\27" then
-      return "double_esc"
+    elseif c == "\127" or c == "\8" then
+      table.insert(keys, "backspace")
+      i = i + 1
+    elseif c == "\r" or c == "\n" then
+      table.insert(keys, "enter")
+      i = i + 1
+    elseif c == "\t" then
+      table.insert(keys, "tab")
+      i = i + 1
+    elseif c == "\3" then
+      table.insert(keys, "ctrl_c")
+      i = i + 1
+    elseif c == "\4" then
+      table.insert(keys, "ctrl_d")
+      i = i + 1
+    elseif c == "\18" then
+      table.insert(keys, "ctrl_r")
+      i = i + 1
+    elseif c == "\17" then
+      table.insert(keys, "ctrl_q")
+      i = i + 1
+    elseif c == "\14" then
+      table.insert(keys, "ctrl_n")
+      i = i + 1
+    elseif c == "\16" then
+      table.insert(keys, "ctrl_p")
+      i = i + 1
+    elseif c == "\1" then
+      table.insert(keys, "ctrl_a")
+      i = i + 1
+    elseif c == "\5" then
+      table.insert(keys, "ctrl_e")
+      i = i + 1
+    elseif c == " " then
+      table.insert(keys, "space")
+      i = i + 1
     else
-      return "alt_" .. c2
+      table.insert(keys, c)
+      i = i + 1
     end
-  elseif c == "\127" or c == "\8" then
-    return "backspace"
-  elseif c == "\r" or c == "\n" then
-    return "enter"
-  elseif c == "\t" then
-    return "tab"
-  elseif c == "\3" then
-    return "ctrl_c"
-  elseif c == "\4" then
-    return "ctrl_d"
-  elseif c == "\18" then
-    return "ctrl_r"
-  elseif c == "\17" then
-    return "ctrl_q"
-  elseif c == "\14" then
-    return "ctrl_n"
-  elseif c == "\16" then
-    return "ctrl_p"
-  elseif c == "\1" then
-    return "ctrl_a"
-  elseif c == "\5" then
-    return "ctrl_e"
-  elseif c == " " then
-    return "space"
+  end
+  return keys
+end
+
+-- Read all currently available keys from terminal buffer in one batch
+function term.read_keys()
+  local keys = {}
+
+  -- Return any keys already queued
+  while #input_buffer > 0 do
+    table.insert(keys, table.remove(input_buffer, 1))
   end
 
-  return c
+  -- In raw mode with min 0 time 0, read available chunk non-blockingly
+  local chunk = io.read(256)
+  if chunk and #chunk > 0 then
+    local parsed = parse_keys_from_chunk(chunk)
+    for _, k in ipairs(parsed) do
+      table.insert(keys, k)
+    end
+  end
+
+  return keys
+end
+
+-- Read single key (legacy wrapper for backward compatibility)
+function term.read_key()
+  if #input_buffer > 0 then
+    return table.remove(input_buffer, 1)
+  end
+  local keys = term.read_keys()
+  if #keys > 0 then
+    local first = keys[1]
+    for idx = 2, #keys do
+      table.insert(input_buffer, keys[idx])
+    end
+    return first
+  end
+  return nil
 end
 
 -- String utilities for UTF-8 terminal display

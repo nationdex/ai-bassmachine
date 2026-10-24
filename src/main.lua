@@ -146,6 +146,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     selected_target_idx = 1,
     selected_env_server_idx = 1,
     search_query = "",
+    pricing_filter = "All",
     ai_prompt = "Hello! Test MCP tool integration with deepseek/deepseek-v4.1-flash",
     ai_response = nil,
     status_msg = "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
@@ -190,7 +191,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     -- 5. Draw Status Bar
     local hotkeys = "[1-6] Tabs │ [↑/↓] Navigate │ [Enter] Select/Run │ [Q] Quit"
     if active_tab_idx == 1 then
-      hotkeys = "[Enter] Run │ [I] Install │ [D] Del │ [/] Search │ [R] Sync"
+      hotkeys = "[Enter] Run │ [I] Install │ [/] Search │ [P] Free/Paid │ [D] Del"
     elseif active_tab_idx == 2 then
       hotkeys = "[X] Call Tool │ [R] Spawn Runner │ [K] Stop Runner"
     elseif active_tab_idx == 3 then
@@ -216,9 +217,9 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     -- Frame throttle to eliminate SSH latency & high CPU usage (15ms ~ 60 FPS cap)
     term.sleep(0.015)
 
-    -- Process input
-    local key = term.read_key()
-    if key then
+    -- Process all buffered input keys immediately to prevent SSH lag and delayed scrolling
+    local keys = term.read_keys()
+    for _, key in ipairs(keys) do
       -- If inside a modal input dialog, capture text entry
       if state.modal then
         if key == "esc" or key == "double_esc" or key == "ctrl_c" then
@@ -375,6 +376,17 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           local max_tgt = #(state.env_targets or {})
           state.selected_target_idx = math.min(max_tgt > 0 and max_tgt or 1, (state.selected_target_idx or 1) + 1)
           state.selected_env_server_idx = 1
+        elseif (key == "p" or key == "P") and active_tab_idx == 1 then
+          local cur_p = state.pricing_filter or "All"
+          if cur_p == "All" then
+            state.pricing_filter = "Free"
+          elseif cur_p == "Free" then
+            state.pricing_filter = "Paid"
+          else
+            state.pricing_filter = "All"
+          end
+          state.selected_mcp_idx = 1
+          state.status_msg = "Marketplace filter: " .. state.pricing_filter .. " MCPs"
         elseif (key == "r" or key == "R") and active_tab_idx == 1 then
           state.status_msg = "Syncing live MCP registries (Official & Awesome-MCP)..."
           engine:render()
