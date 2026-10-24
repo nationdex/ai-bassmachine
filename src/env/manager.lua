@@ -11,54 +11,86 @@ local json = require("mcp-bassmachine.utils.json")
 local EnvManager = {}
 EnvManager.__index = EnvManager
 
-local TARGET_AGENTS = {
-  {
-    id = "antigravity",
-    name = "Antigravity (Global)",
-    path = os.getenv("HOME") .. "/.gemini/antigravity/mcp_config.json",
-    format = "standard_mcp",
-  },
-  {
-    id = "antigravity_cli",
-    name = "Antigravity CLI",
-    path = os.getenv("HOME") .. "/.gemini/config/mcp_config.json",
-    format = "standard_mcp",
-  },
-  {
-    id = "opencode",
-    name = "OpenCode",
-    path = os.getenv("HOME") .. "/.config/opencode/opencode.json",
-    format = "opencode",
-  },
-  {
-    id = "claude",
-    name = "Claude (Code & Desktop)",
-    path = os.getenv("HOME") .. "/.claude.json",
-    format = "claude_global",
-  },
-  {
-    id = "cursor",
-    name = "Cursor IDE",
-    path = os.getenv("HOME") .. "/.config/Cursor/User/mcp.json",
-    format = "standard_mcp",
-  },
-  {
-    id = "vscode",
-    name = "VS Code",
-    path = os.getenv("HOME") .. "/.config/Code/User/mcp.json",
-    format = "standard_mcp",
-  },
-  {
-    id = "vscode_insiders",
-    name = "VS Code Insiders",
-    path = os.getenv("HOME") .. "/.config/Code - Insiders/User/mcp.json",
-    format = "standard_mcp",
-  },
-}
+local function get_home_dir()
+  local home = os.getenv("HOME")
+  if not home or #home == 0 then
+    local userprofile = os.getenv("USERPROFILE")
+    if userprofile and #userprofile > 0 then
+      home = userprofile
+    else
+      local homedrive = os.getenv("HOMEDRIVE") or ""
+      local homepath = os.getenv("HOMEPATH") or ""
+      if #homedrive > 0 and #homepath > 0 then
+        home = homedrive .. homepath
+      else
+        home = "."
+      end
+    end
+  end
+  local clean = home:gsub("\\", "/")
+  return clean
+end
 
+local function build_target_agents()
+  local home = get_home_dir()
+  local appdata = os.getenv("APPDATA")
+  if appdata then
+    appdata = appdata:gsub("\\", "/")
+  end
+
+  local cursor_path = appdata and (appdata .. "/Cursor/User/mcp.json") or (home .. "/.config/Cursor/User/mcp.json")
+  local vscode_path = appdata and (appdata .. "/Code/User/mcp.json") or (home .. "/.config/Code/User/mcp.json")
+  local vscode_insiders_path = appdata and (appdata .. "/Code - Insiders/User/mcp.json")
+    or (home .. "/.config/Code - Insiders/User/mcp.json")
+
+  return {
+    {
+      id = "antigravity",
+      name = "Antigravity (Global)",
+      path = home .. "/.gemini/antigravity/mcp_config.json",
+      format = "standard_mcp",
+    },
+    {
+      id = "antigravity_cli",
+      name = "Antigravity CLI",
+      path = home .. "/.gemini/config/mcp_config.json",
+      format = "standard_mcp",
+    },
+    {
+      id = "opencode",
+      name = "OpenCode",
+      path = home .. "/.config/opencode/opencode.json",
+      format = "opencode",
+    },
+    {
+      id = "claude",
+      name = "Claude (Code & Desktop)",
+      path = home .. "/.claude.json",
+      format = "claude_global",
+    },
+    {
+      id = "cursor",
+      name = "Cursor IDE",
+      path = cursor_path,
+      format = "standard_mcp",
+    },
+    {
+      id = "vscode",
+      name = "VS Code",
+      path = vscode_path,
+      format = "standard_mcp",
+    },
+    {
+      id = "vscode_insiders",
+      name = "VS Code Insiders",
+      path = vscode_insiders_path,
+      format = "standard_mcp",
+    },
+  }
+end
 function EnvManager.new()
   local self = setmetatable({}, EnvManager)
-  self.targets = TARGET_AGENTS
+  self.targets = build_target_agents()
   return self
 end
 

@@ -1,3 +1,22 @@
+local function get_home_dir()
+  local home = os.getenv("HOME")
+  if not home or #home == 0 then
+    local userprofile = os.getenv("USERPROFILE")
+    if userprofile and #userprofile > 0 then
+      home = userprofile
+    else
+      local homedrive = os.getenv("HOMEDRIVE") or ""
+      local homepath = os.getenv("HOMEPATH") or ""
+      if #homedrive > 0 and #homepath > 0 then
+        home = homedrive .. homepath
+      else
+        home = "."
+      end
+    end
+  end
+  local clean = home:gsub("\\", "/")
+  return clean
+end
 -- MCP Bass Machine - Multi-Marketplace MCP Registry
 -- Fetches and searches MCP servers from Official Registry, Punkpeye Awesome-MCP,
 -- Wong2 Awesome-MCP, and Appcypher Awesome-MCP registries.
@@ -328,7 +347,7 @@ local CURATED_CATALOG = {
 function Registry.new(config)
   local self = setmetatable({}, Registry)
   self.config = config
-  self.cache_file = os.getenv("HOME") .. "/.bassmachine_mcp_cache.json"
+  self.cache_file = get_home_dir() .. "/.bassmachine_mcp_cache.json"
   self.cache = {}
   self.cached_at = 0
   self.is_fetching = false
