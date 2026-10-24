@@ -216,21 +216,7 @@ end
 local saved_stty = nil
 
 function term.enter_raw_mode()
-  -- Try stty (handles Linux, macOS, and Git Bash / MSYS2 / Mintty on Windows)
-  local f = io.popen("stty -g 2>/dev/null", "r")
-  if f then
-    saved_stty = f:read("*a")
-    f:close()
-    if saved_stty then
-      saved_stty = saved_stty:gsub("%s+", "")
-    end
-  end
-  os.execute("stty raw -echo min 0 time 0 2>/dev/null || stty raw -echo min 0 time 0 2>nul")
-
   if is_windows then
-    -- On Windows, enable UTF-8 code page (65001) for CMD / PowerShell 5.0 - 7+
-    os.execute("chcp 65001 >nul 2>nul")
-
     if win_init then
       pcall(win_init)
     elseif win_ffi then
@@ -243,10 +229,10 @@ function term.enter_raw_mode()
           saved_win_in_mode = in_mode[0]
           local raw_in = saved_win_in_mode
           local bit = rawget(_G, "bit")
-          if bit and bit.band and bit.bor and bit.bnot then
-            raw_in = bit.bor(bit.band(raw_in, bit.bnot(7)), 512)
+          if bit and bit.band and bit.bnot then
+            raw_in = bit.band(raw_in, bit.bnot(7))
           else
-            raw_in = (raw_in - (raw_in % 8)) + 512
+            raw_in = raw_in - (raw_in % 8)
           end
           win_ffi.C.SetConsoleMode(hIn, raw_in)
         end
@@ -263,21 +249,19 @@ function term.enter_raw_mode()
         end
       end)
     else
-      -- Enable raw VT console mode via inline PowerShell Win32 API invocation
-      local ps_enable = {
-        'powershell -NoProfile -NonInteractive -Command "',
-        "$k=Add-Type -MemberDefinition @'\n",
-        '[DllImport(\\"kernel32.dll\\")] public static extern IntPtr GetStdHandle(int n);\n',
-        '[DllImport(\\"kernel32.dll\\")] public static extern bool GetConsoleMode(IntPtr h, out uint m);\n',
-        '[DllImport(\\"kernel32.dll\\")] public static extern bool SetConsoleMode(IntPtr h, uint m);\n',
-        "'@ -Name W32C -Namespace W32 -PassThru;\n",
-        "$h=$k::GetStdHandle(-10); [uint32]$m=0; $k::GetConsoleMode($h,[ref]$m);\n",
-        "$k::SetConsoleMode($h, ($m -band -bnot 7) -bor 512);\n",
-        "$ho=$k::GetStdHandle(-11); [uint32]$mo=0; $k::GetConsoleMode($ho,[ref]$mo);\n",
-        '$k::SetConsoleMode($ho, $mo -bor 5)" >nul 2>nul',
-      }
-      os.execute(table.concat(ps_enable))
+      -- Git Bash / MSYS2 / Mintty fallback on Windows
+      os.execute("stty raw -echo min 0 time 0 2>/dev/null")
     end
+  else
+    local f = io.popen("stty -g 2>/dev/null", "r")
+    if f then
+      saved_stty = f:read("*a")
+      f:close()
+      if saved_stty then
+        saved_stty = saved_stty:gsub("%s+", "")
+      end
+    end
+    os.execute("stty raw -echo min 0 time 0 2>/dev/null")
   end
 
   io.write(term.colors.alt_screen_on)
@@ -289,12 +273,6 @@ function term.exit_raw_mode()
   io.write(term.colors.show_cursor)
   io.write(term.colors.alt_screen_off)
   io.flush()
-
-  if saved_stty and #saved_stty > 0 then
-    os.execute("stty " .. saved_stty .. " 2>/dev/null || stty " .. saved_stty .. " 2>nul")
-  else
-    os.execute("stty sane 2>/dev/null || stty sane 2>nul")
-  end
 
   if is_windows then
     if win_cleanup then
@@ -309,15 +287,13 @@ function term.exit_raw_mode()
         end
       end)
     else
-      -- Restore standard Windows console input mode (503 = 0x01F7)
-      local ps_restore = {
-        'powershell -NoProfile -NonInteractive -Command "',
-        "$k=Add-Type -MemberDefinition @'\n",
-        '[DllImport(\\"kernel32.dll\\")] public static extern IntPtr GetStdHandle(int n);\n',
-        '[DllImport(\\"kernel32.dll\\")] public static extern bool SetConsoleMode(IntPtr h, uint m);\n',
-        "'@ -Name W32R -Namespace W32 -PassThru; $h=$k::GetStdHandle(-10); $k::SetConsoleMode($h, 503)\" >nul 2>nul",
-      }
-      os.execute(table.concat(ps_restore))
+      os.execute("stty sane 2>/dev/null")
+    end
+  else
+    if saved_stty and #saved_stty > 0 then
+      os.execute("stty " .. saved_stty .. " 2>/dev/null")
+    else
+      os.execute("stty sane 2>/dev/null")
     end
   end
 end
@@ -494,9 +470,7 @@ function term.read_keys()
       end
       table.insert(keys, k)
     end
-    if #keys > 0 then
-      return keys
-    end
+    return keys
   end
 
   if is_windows then

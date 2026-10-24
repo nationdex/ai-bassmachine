@@ -18,20 +18,21 @@ static DWORD orig_out_mode = 0;
 static int raw_enabled = 0;
 
 static void init_handles(void) {
+    // Always open CONIN$ and CONOUT$ directly to bypass any process-level pipe redirection
     if (hConsoleIn == INVALID_HANDLE_VALUE || hConsoleIn == NULL) {
-        hConsoleIn = GetStdHandle(STD_INPUT_HANDLE);
+        hConsoleIn = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
+                                 FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                 NULL, OPEN_EXISTING, 0, NULL);
         if (hConsoleIn == INVALID_HANDLE_VALUE || hConsoleIn == NULL) {
-            hConsoleIn = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
-                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                     NULL, OPEN_EXISTING, 0, NULL);
+            hConsoleIn = GetStdHandle(STD_INPUT_HANDLE);
         }
     }
     if (hConsoleOut == INVALID_HANDLE_VALUE || hConsoleOut == NULL) {
-        hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        hConsoleOut = CreateFileA("CONOUT$", GENERIC_READ | GENERIC_WRITE,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                  NULL, OPEN_EXISTING, 0, NULL);
         if (hConsoleOut == INVALID_HANDLE_VALUE || hConsoleOut == NULL) {
-            hConsoleOut = CreateFileA("CONOUT$", GENERIC_READ | GENERIC_WRITE,
-                                      FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                      NULL, OPEN_EXISTING, 0, NULL);
+            hConsoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
         }
     }
 }
@@ -64,8 +65,10 @@ __declspec(dllexport) int win_init(void* L) {
     if (!raw_enabled && hConsoleIn != INVALID_HANDLE_VALUE && hConsoleOut != INVALID_HANDLE_VALUE) {
         if (GetConsoleMode(hConsoleIn, &orig_in_mode) && GetConsoleMode(hConsoleOut, &orig_out_mode)) {
             raw_enabled = 1;
-            SetConsoleMode(hConsoleOut, orig_out_mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
-            SetConsoleMode(hConsoleIn, (orig_in_mode & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT)));
+            // Output: ENABLE_PROCESSED_OUTPUT (1) | ENABLE_VIRTUAL_TERMINAL_PROCESSING (4)
+            SetConsoleMode(hConsoleOut, orig_out_mode | 0x0005);
+            // Input: disable ENABLE_LINE_INPUT (2) | ENABLE_ECHO_INPUT (4) | ENABLE_PROCESSED_INPUT (1)
+            SetConsoleMode(hConsoleIn, (orig_in_mode & ~0x0007));
         }
     }
     if (p_pushinteger) {
@@ -94,7 +97,7 @@ __declspec(dllexport) int win_poll_key(void* L) {
         return 0;
     }
 
-    INPUT_RECORD records[16];
+    INPUT_RECORD records[32];
     DWORD readCount = 0;
     if (!PeekConsoleInputA(hConsoleIn, records, sizeof(records)/sizeof(records[0]), &readCount) || readCount == 0) {
         return 0;
@@ -102,7 +105,7 @@ __declspec(dllexport) int win_poll_key(void* L) {
 
     for (DWORD i = 0; i < readCount; i++) {
         if (records[i].EventType == KEY_EVENT) {
-            INPUT_RECORD discard[16];
+            INPUT_RECORD discard[32];
             DWORD discarded = 0;
             ReadConsoleInputA(hConsoleIn, discard, i + 1, &discarded);
 
@@ -136,24 +139,30 @@ __declspec(dllexport) int win_poll_key(void* L) {
                 if (ch == 18 || vk == 'R') { p_pushlstring(L, "ctrl_r", 6); return 1; }
             }
 
-            // 3. Escape or VT Sequences
+            // 3. Escape key or VT sequences (peeking ahead, skipping key-up events)
             if (vk == VK_ESCAPE || ch == 27) {
-                INPUT_RECORD nextRecs[8];
+                INPUT_RECORD nextRecs[16];
                 DWORD nextCount = 0;
-                if (PeekConsoleInputA(hConsoleIn, nextRecs, sizeof(nextRecs)/sizeof(nextRecs[0]), &nextCount) && nextCount >= 2) {
-                    if (nextRecs[0].EventType == KEY_EVENT && nextRecs[0].Event.KeyEvent.bKeyDown &&
-                        nextRecs[1].EventType == KEY_EVENT && nextRecs[1].Event.KeyEvent.bKeyDown) {
-                        char c1 = nextRecs[0].Event.KeyEvent.uChar.AsciiChar;
-                        char c2 = nextRecs[1].Event.KeyEvent.uChar.AsciiChar;
-                        if (c1 == '[' || c1 == 'O') {
-                            ReadConsoleInputA(hConsoleIn, discard, 2, &discarded);
-                            if (c2 == 'A') { p_pushlstring(L, "up", 2); return 1; }
-                            if (c2 == 'B') { p_pushlstring(L, "down", 4); return 1; }
-                            if (c2 == 'C') { p_pushlstring(L, "right", 5); return 1; }
-                            if (c2 == 'D') { p_pushlstring(L, "left", 4); return 1; }
-                            if (c2 == 'H') { p_pushlstring(L, "home", 4); return 1; }
-                            if (c2 == 'F') { p_pushlstring(L, "end", 3); return 1; }
+                char seq[8] = {0};
+                int seqLen = 0;
+                if (PeekConsoleInputA(hConsoleIn, nextRecs, sizeof(nextRecs)/sizeof(nextRecs[0]), &nextCount) && nextCount > 0) {
+                    DWORD discardTotal = 0;
+                    for (DWORD j = 0; j < nextCount && seqLen < 4; j++) {
+                        if (nextRecs[j].EventType == KEY_EVENT) {
+                            discardTotal = j + 1;
+                            if (nextRecs[j].Event.KeyEvent.bKeyDown) {
+                                seq[seqLen++] = nextRecs[j].Event.KeyEvent.uChar.AsciiChar;
+                            }
                         }
+                    }
+                    if (seqLen >= 2 && (seq[0] == '[' || seq[0] == 'O')) {
+                        ReadConsoleInputA(hConsoleIn, discard, discardTotal, &discarded);
+                        if (seq[1] == 'A') { p_pushlstring(L, "up", 2); return 1; }
+                        if (seq[1] == 'B') { p_pushlstring(L, "down", 4); return 1; }
+                        if (seq[1] == 'C') { p_pushlstring(L, "right", 5); return 1; }
+                        if (seq[1] == 'D') { p_pushlstring(L, "left", 4); return 1; }
+                        if (seq[1] == 'H') { p_pushlstring(L, "home", 4); return 1; }
+                        if (seq[1] == 'F') { p_pushlstring(L, "end", 3); return 1; }
                     }
                 }
                 p_pushlstring(L, "esc", 3);
@@ -168,7 +177,8 @@ __declspec(dllexport) int win_poll_key(void* L) {
         }
     }
 
-    INPUT_RECORD flushRecs[16];
+    // Flush any pending non-key events (mouse move, window size, focus)
+    INPUT_RECORD flushRecs[32];
     DWORD flushed = 0;
     ReadConsoleInputA(hConsoleIn, flushRecs, readCount, &flushed);
     return 0;
