@@ -21,7 +21,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 
 # 2. Dependency check & Automated installation: Lua (5.1 - 5.4 or LuaJIT)
 function Find-LuaCommand {
-    foreach ($cand in @("lua", "lua54", "lua5.4", "lua53", "lua5.3", "luajit")) {
+    foreach ($cand in @("luajit", "lua", "lua54", "lua5.4", "lua53", "lua5.3")) {
         $found = Get-Command $cand -ErrorAction SilentlyContinue
         if ($found) {
             return $found.Source
@@ -29,13 +29,16 @@ function Find-LuaCommand {
     }
     # Check standalone install directory and common default Windows installation paths
     $commonPaths = @(
+        "$StandaloneLuaDir\luajit.exe",
         "$StandaloneLuaDir\lua54.exe",
         "$StandaloneLuaDir\lua.exe",
         "$env:ProgramFiles\Lua\lua.exe",
         "$env:ProgramFiles\Lua\bin\lua.exe",
         "${env:ProgramFiles(x86)}\Lua\lua.exe",
         "${env:ProgramFiles(x86)}\Lua\bin\lua.exe",
+        "$UserHome\scoop\apps\luajit\current\bin\luajit.exe",
         "$UserHome\scoop\apps\lua\current\bin\lua.exe",
+        "$UserHome\scoop\shims\luajit.exe",
         "$UserHome\scoop\shims\lua.exe",
         "$UserHome\AppData\Local\Programs\Lua\lua.exe"
     )
@@ -160,28 +163,59 @@ if (-not (Test-Path "$BinDir")) {
 $CmdWrapper = "$BinDir\mcp-bassmachine.cmd"
 $Ps1Wrapper = "$BinDir\mcp-bassmachine.ps1"
 
-# .cmd wrapper for CMD & general CLI (enables UTF-8 codepage 65001 & virtual terminal processing)
+# .cmd wrapper for CMD & general CLI (launches via PowerShell wrapper to inherit raw VT console mode)
 $CmdContent = @"
 @echo off
-setlocal EnableDelayedExpansion
+setlocal
 chcp 65001 >nul 2>nul
-cd /d "$InstallDir"
-"$LuaPath" src\main.lua %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0mcp-bassmachine.ps1" %*
+if errorlevel 1 (
+    cd /d "$InstallDir"
+    "$LuaPath" src\main.lua %*
+)
 "@
 Set-Content -Path "$CmdWrapper" -Value $CmdContent -Encoding ASCII
 
-# .ps1 wrapper for PowerShell 5.0 through 7+ (forces UTF-8 OutputEncoding & VT ANSI processing)
+# .ps1 wrapper for PowerShell 5.0 through 7+ (forces UTF-8 I/O & Win32 console raw VT mode)
 $Ps1Content = @"
 Push-Location "$InstallDir"
 try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::InputEncoding = [System.Text.Encoding]::UTF8
     `$OutputEncoding = [System.Text.Encoding]::UTF8
+
+    # Win32 Console Raw VT Mode initialization
     try {
-        # Enable Virtual Terminal sequences on legacy Windows console hosts
-        `$null = [Console]::CursorVisible
+        `$win32 = Add-Type -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern IntPtr GetStdHandle(int nStdHandle);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+'@ -Name "ConsoleRawHelper" -Namespace "McpBass" -PassThru
+
+        `$hIn = `$win32::GetStdHandle(-10)
+        `$hOut = `$win32::GetStdHandle(-11)
+        [uint32]`$origIn = 0
+        [uint32]`$origOut = 0
+        `$win32::GetConsoleMode(`$hIn, [ref]`$origIn)
+        `$win32::GetConsoleMode(`$hOut, [ref]`$origOut)
+
+        # Output: ENABLE_PROCESSED_OUTPUT (1) | ENABLE_VIRTUAL_TERMINAL_PROCESSING (4)
+        `$win32::SetConsoleMode(`$hOut, `$origOut -bor 0x0005)
+        # Input: ENABLE_VIRTUAL_TERMINAL_INPUT (0x0200 = 512), disable LINE (2), ECHO (4), PROCESSED (1)
+        `$win32::SetConsoleMode(`$hIn, (`$origIn -band (-bnot 7)) -bor 0x0200)
     } catch {}
+
     & "$LuaPath" src\main.lua @args
 } finally {
+    try {
+        if (`$win32 -and `$origIn -ne 0) {
+            `$win32::SetConsoleMode(`$hIn, `$origIn)
+            `$win32::SetConsoleMode(`$hOut, `$origOut)
+        }
+    } catch {}
     Pop-Location
 }
 "@

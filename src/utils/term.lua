@@ -52,6 +52,26 @@ end
 
 local is_windows = (package.config:sub(1, 1) == "\\") or (os.getenv("OS") and os.getenv("OS"):match("Windows"))
 
+local win_ffi = nil
+local saved_win_in_mode = nil
+local saved_win_out_mode = nil
+
+if is_windows then
+  local ok, ffi = pcall(require, "ffi")
+  if ok and ffi then
+    pcall(function()
+      ffi.cdef([[
+        int _kbhit(void);
+        int _getch(void);
+        void* GetStdHandle(int nStdHandle);
+        int GetConsoleMode(void* hConsoleHandle, unsigned int* lpMode);
+        int SetConsoleMode(void* hConsoleHandle, unsigned int dwMode);
+      ]])
+      win_ffi = ffi
+    end)
+  end
+end
+
 local cached_rows = 24
 local cached_cols = 80
 local last_size_check = 0
@@ -173,16 +193,60 @@ function term.enter_raw_mode()
   else
     -- On Windows, enable UTF-8 code page (65001) for CMD / PowerShell 5.0 - 7+
     os.execute("chcp 65001 >nul 2>nul")
+
+    if win_ffi then
+      pcall(function()
+        local hIn = win_ffi.C.GetStdHandle(-10) -- STD_INPUT_HANDLE
+        local hOut = win_ffi.C.GetStdHandle(-11) -- STD_OUTPUT_HANDLE
+        local in_mode = win_ffi.new("unsigned int[1]")
+        local out_mode = win_ffi.new("unsigned int[1]")
+        if win_ffi.C.GetConsoleMode(hIn, in_mode) ~= 0 then
+          saved_win_in_mode = in_mode[0]
+          local raw_in = saved_win_in_mode
+          local bit = rawget(_G, "bit")
+          if bit and bit.band and bit.bor and bit.bnot then
+            raw_in = bit.bor(bit.band(raw_in, bit.bnot(7)), 512)
+          else
+            raw_in = (raw_in - (raw_in % 8)) + 512
+          end
+          win_ffi.C.SetConsoleMode(hIn, raw_in)
+        end
+        if win_ffi.C.GetConsoleMode(hOut, out_mode) ~= 0 then
+          saved_win_out_mode = out_mode[0]
+          local raw_out = saved_win_out_mode
+          local bit = rawget(_G, "bit")
+          if bit and bit.bor then
+            raw_out = bit.bor(raw_out, 5)
+          else
+            raw_out = raw_out + 5
+          end
+          win_ffi.C.SetConsoleMode(hOut, raw_out)
+        end
+      end)
+    else
+      -- Enable raw VT console mode via inline PowerShell Win32 API invocation
+      local ps_enable = {
+        'powershell -NoProfile -NonInteractive -Command "',
+        "$k=Add-Type -MemberDefinition @'\n",
+        '[DllImport(\\"kernel32.dll\\")] public static extern IntPtr GetStdHandle(int n);\n',
+        '[DllImport(\\"kernel32.dll\\")] public static extern bool GetConsoleMode(IntPtr h, out uint m);\n',
+        '[DllImport(\\"kernel32.dll\\")] public static extern bool SetConsoleMode(IntPtr h, uint m);\n',
+        "'@ -Name W32C -Namespace W32 -PassThru;\n",
+        "$h=$k::GetStdHandle(-10); [uint32]$m=0; $k::GetConsoleMode($h,[ref]$m);\n",
+        "$k::SetConsoleMode($h, ($m -band -bnot 7) -bor 512);\n",
+        "$ho=$k::GetStdHandle(-11); [uint32]$mo=0; $k::GetConsoleMode($ho,[ref]$mo);\n",
+        '$k::SetConsoleMode($ho, $mo -bor 5)" >nul 2>nul',
+      }
+      os.execute(table.concat(ps_enable))
+    end
   end
 
   io.write(term.colors.alt_screen_on)
   io.write(term.colors.hide_cursor)
-  io.write(term.colors.mouse_on)
   io.flush()
 end
 
 function term.exit_raw_mode()
-  io.write(term.colors.mouse_off)
   io.write(term.colors.show_cursor)
   io.write(term.colors.alt_screen_off)
   io.flush()
@@ -192,6 +256,27 @@ function term.exit_raw_mode()
       os.execute("stty " .. saved_stty .. " 2>/dev/null")
     else
       os.execute("stty sane 2>/dev/null")
+    end
+  else
+    if win_ffi and saved_win_in_mode then
+      pcall(function()
+        local hIn = win_ffi.C.GetStdHandle(-10)
+        local hOut = win_ffi.C.GetStdHandle(-11)
+        win_ffi.C.SetConsoleMode(hIn, saved_win_in_mode)
+        if saved_win_out_mode then
+          win_ffi.C.SetConsoleMode(hOut, saved_win_out_mode)
+        end
+      end)
+    else
+      -- Restore standard Windows console input mode (503 = 0x01F7)
+      local ps_restore = {
+        'powershell -NoProfile -NonInteractive -Command "',
+        "$k=Add-Type -MemberDefinition @'\n",
+        '[DllImport(\\"kernel32.dll\\")] public static extern IntPtr GetStdHandle(int n);\n',
+        '[DllImport(\\"kernel32.dll\\")] public static extern bool SetConsoleMode(IntPtr h, uint m);\n',
+        "'@ -Name W32R -Namespace W32 -PassThru; $h=$k::GetStdHandle(-10); $k::SetConsoleMode($h, 503)\" >nul 2>nul",
+      }
+      os.execute(table.concat(ps_restore))
     end
   end
 end
@@ -360,16 +445,154 @@ function term.read_keys()
     table.insert(keys, table.remove(input_buffer, 1))
   end
 
-  -- In raw mode, read available chunk non-blockingly
-  local chunk = io.read(256)
-  if chunk and #chunk > 0 then
-    local parsed = parse_keys_from_chunk(chunk)
-    for _, k in ipairs(parsed) do
-      table.insert(keys, k)
+  if is_windows then
+    if win_ffi then
+      -- 1. Windows with FFI (LuaJIT): instant non-blocking check & drain via _kbhit & _getch
+      while win_ffi.C._kbhit() ~= 0 do
+        local ch = win_ffi.C._getch()
+        if ch == 0 or ch == 224 then
+          local scan = win_ffi.C._getch()
+          if scan == 72 then
+            table.insert(keys, "up")
+          elseif scan == 80 then
+            table.insert(keys, "down")
+          elseif scan == 75 then
+            table.insert(keys, "left")
+          elseif scan == 77 then
+            table.insert(keys, "right")
+          elseif scan == 71 then
+            table.insert(keys, "home")
+          elseif scan == 79 then
+            table.insert(keys, "end")
+          elseif scan == 73 then
+            table.insert(keys, "page_up")
+          elseif scan == 81 then
+            table.insert(keys, "page_down")
+          elseif scan == 83 then
+            table.insert(keys, "delete")
+          end
+        elseif ch == 27 then
+          local seq = ""
+          while win_ffi.C._kbhit() ~= 0 do
+            local next_c = win_ffi.C._getch()
+            seq = seq .. string.char(next_c)
+            if (next_c >= 65 and next_c <= 90) or (next_c >= 97 and next_c <= 122) or next_c == 126 then
+              break
+            end
+          end
+          if #seq > 0 then
+            local parsed = parse_keys_from_chunk("\27" .. seq)
+            for _, pk in ipairs(parsed) do
+              table.insert(keys, pk)
+            end
+          else
+            table.insert(keys, "esc")
+          end
+        elseif ch == 13 or ch == 10 then
+          table.insert(keys, "enter")
+        elseif ch == 8 or ch == 127 then
+          table.insert(keys, "backspace")
+        elseif ch == 9 then
+          table.insert(keys, "tab")
+        elseif ch == 3 then
+          table.insert(keys, "ctrl_c")
+        elseif ch == 4 then
+          table.insert(keys, "ctrl_d")
+        elseif ch == 18 then
+          table.insert(keys, "ctrl_r")
+        elseif ch == 17 then
+          table.insert(keys, "ctrl_q")
+        elseif ch == 32 then
+          table.insert(keys, "space")
+        elseif ch >= 32 and ch < 127 then
+          table.insert(keys, string.char(ch))
+        end
+      end
+      return keys
+    else
+      -- 2. Windows fallback without FFI (PUC Lua 5.1 - 5.4):
+      -- Never call io.read(256) on Windows because fread will block waiting for 256 bytes!
+      -- Read byte-by-byte using io.read(1) so single keystrokes return immediately.
+      local b1 = io.read(1)
+      if b1 and #b1 > 0 then
+        if b1 == "\27" then
+          local b2 = io.read(1)
+          if b2 == "[" then
+            local seq = ""
+            while true do
+              local b_next = io.read(1)
+              if not b_next then
+                break
+              end
+              seq = seq .. b_next
+              local byte_val = b_next:byte()
+              if (byte_val >= 65 and byte_val <= 90) or (byte_val >= 97 and byte_val <= 122) or byte_val == 126 then
+                break
+              end
+            end
+            local parsed = parse_keys_from_chunk("\27[" .. seq)
+            for _, pk in ipairs(parsed) do
+              table.insert(keys, pk)
+            end
+          elseif b2 == "O" then
+            local b3 = io.read(1)
+            local parsed = parse_keys_from_chunk("\27O" .. (b3 or ""))
+            for _, pk in ipairs(parsed) do
+              table.insert(keys, pk)
+            end
+          else
+            table.insert(keys, "esc")
+            if b2 then
+              local parsed = parse_keys_from_chunk(b2)
+              for _, pk in ipairs(parsed) do
+                table.insert(keys, pk)
+              end
+            end
+          end
+        elseif b1 == "\0" or b1 == "\224" then
+          local b2 = io.read(1)
+          if b2 then
+            local scan = b2:byte()
+            if scan == 72 then
+              table.insert(keys, "up")
+            elseif scan == 80 then
+              table.insert(keys, "down")
+            elseif scan == 75 then
+              table.insert(keys, "left")
+            elseif scan == 77 then
+              table.insert(keys, "right")
+            elseif scan == 71 then
+              table.insert(keys, "home")
+            elseif scan == 79 then
+              table.insert(keys, "end")
+            elseif scan == 73 then
+              table.insert(keys, "page_up")
+            elseif scan == 81 then
+              table.insert(keys, "page_down")
+            elseif scan == 83 then
+              table.insert(keys, "delete")
+            end
+          end
+        else
+          local parsed = parse_keys_from_chunk(b1)
+          for _, pk in ipairs(parsed) do
+            table.insert(keys, pk)
+          end
+        end
+      end
+      return keys
     end
+  else
+    -- 3. Unix (Linux / macOS): non-blocking read via stty min 0 time 0
+    local chunk = io.read(256)
+    if chunk and #chunk > 0 then
+      local parsed = parse_keys_from_chunk(chunk)
+      for _, k in ipairs(parsed) do
+        table.insert(keys, k)
+      end
+    end
+    return keys
   end
-
-  return keys
 end
 
 -- Read single key (legacy wrapper for backward compatibility)
