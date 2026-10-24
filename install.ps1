@@ -8,6 +8,7 @@ $RepoUrl = "https://github.com/nationdex/mcp-bassmachine.git"
 $UserHome = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { "." }
 $InstallDir = if ($env:MCP_BASSMACHINE_HOME) { $env:MCP_BASSMACHINE_HOME } else { "$UserHome\.mcp-bassmachine" }
 $BinDir = if ($env:MCP_BASSMACHINE_BIN) { $env:MCP_BASSMACHINE_BIN } else { "$UserHome\.local\bin" }
+$StandaloneLuaDir = "$InstallDir\bin\lua54"
 
 Write-Host "🎛  Installing MCP Bass Machine for Windows..." -ForegroundColor Cyan
 
@@ -26,8 +27,10 @@ function Find-LuaCommand {
             return $found.Source
         }
     }
-    # Check common default Windows installation directories
+    # Check standalone install directory and common default Windows installation paths
     $commonPaths = @(
+        "$StandaloneLuaDir\lua54.exe",
+        "$StandaloneLuaDir\lua.exe",
         "$env:ProgramFiles\Lua\lua.exe",
         "$env:ProgramFiles\Lua\bin\lua.exe",
         "${env:ProgramFiles(x86)}\Lua\lua.exe",
@@ -61,8 +64,8 @@ if (-not $LuaPath) {
             try {
                 Write-Host "Attempting winget install $pkg..." -ForegroundColor Cyan
                 & winget install --id=$pkg -e --silent --accept-package-agreements --accept-source-agreements 2>$null
-                # Refresh current environment Path after installer run
-                $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+                # Refresh current environment PATH after installer run
+                $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
                 $LuaPath = Find-LuaCommand
                 if ($LuaPath) { break }
             } catch {
@@ -76,7 +79,10 @@ if (-not $LuaPath) {
         try {
             Write-Host "Installing Lua via Scoop..." -ForegroundColor Cyan
             & scoop install lua
-            $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
+            if (Test-Path "$UserHome\scoop\shims") {
+                $env:Path = "$env:Path;$UserHome\scoop\shims"
+            }
             $LuaPath = Find-LuaCommand
         } catch {}
     }
@@ -86,7 +92,10 @@ if (-not $LuaPath) {
         try {
             Write-Host "Installing Lua via Chocolatey..." -ForegroundColor Cyan
             & choco install lua -y
-            $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
+            if (Test-Path "$UserHome\AppData\Local\Chocolatey\bin") {
+                $env:Path = "$env:Path;$UserHome\AppData\Local\Chocolatey\bin"
+            }
             $LuaPath = Find-LuaCommand
         } catch {}
     }
@@ -97,16 +106,18 @@ if (-not $LuaPath) {
             Write-Host "Downloading standalone Lua 5.4 binaries for Windows..." -ForegroundColor Cyan
             $luaZipUrl = "https://sourceforge.net/projects/luabinaries/files/5.4.2/Tools%20Executables/lua-5.4.2_Win64_bin.zip/download"
             $tempZip = "$env:TEMP\lua54_win64.zip"
-            $destLuaDir = "$UserHome\.mcp-bassmachine\bin\lua54"
-            New-Item -ItemType Directory -Path $destLuaDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $StandaloneLuaDir -Force | Out-Null
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri $luaZipUrl -OutFile $tempZip -UserAgent "curl/8.0" -UseBasicParsing
-            Expand-Archive -Path $tempZip -DestinationPath $destLuaDir -Force
+            Expand-Archive -Path $tempZip -DestinationPath $StandaloneLuaDir -Force
             Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-            if (Test-Path "$destLuaDir\lua54.exe") {
-                $LuaPath = "$destLuaDir\lua54.exe"
-            } elseif (Test-Path "$destLuaDir\lua.exe") {
-                $LuaPath = "$destLuaDir\lua.exe"
+            if (Test-Path "$StandaloneLuaDir\lua54.exe") {
+                $LuaPath = "$StandaloneLuaDir\lua54.exe"
+            } elseif (Test-Path "$StandaloneLuaDir\lua.exe") {
+                $LuaPath = "$StandaloneLuaDir\lua.exe"
+            }
+            if (Test-Path $StandaloneLuaDir) {
+                $env:Path = "$env:Path;$StandaloneLuaDir"
             }
         } catch {
             Write-Host "Direct binary download could not complete: $_" -ForegroundColor Yellow
