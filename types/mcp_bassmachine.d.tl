@@ -81,6 +81,22 @@ global record AiCompletionResult
   tool_calls: {any}
 end
 
+global record AgentTargetInfo
+  id: string
+  name: string
+  path: string
+  exists: boolean
+  servers: {string:any}
+end
+
+global record EnvManagerModule
+  new: function(): EnvManagerModule
+  get_targets: function(self: EnvManagerModule): {AgentTargetInfo}
+  list_all: function(self: EnvManagerModule): {AgentTargetInfo}
+  add_mcp: function(self: EnvManagerModule, server_name: string, spec: any, target: string): {any}
+  remove_mcp: function(self: EnvManagerModule, server_name: string, target: string): {any}
+end
+
 global record BassMachineModule
   version: string
   create_config: function(path: string): BassMachineConfig

@@ -72,6 +72,7 @@ jobs:
           lua tests/test_toml.lua
           lua tests/test_history.lua
           lua tests/test_mcp_protocol.lua
+          lua tests/test_env_manager.lua
 
       - name: Verify CLI Entrypoint
         run: |

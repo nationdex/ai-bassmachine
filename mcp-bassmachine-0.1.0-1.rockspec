@@ -34,6 +34,7 @@ build = {
     ["mcp-bassmachine.mcp.runner"] = "src/mcp/runner.lua",
     ["mcp-bassmachine.mcp.history"] = "src/mcp/history.lua",
     ["mcp-bassmachine.marketplace.registry"] = "src/marketplace/registry.lua",
+    ["mcp-bassmachine.env.manager"] = "src/env/manager.lua",
     ["mcp-bassmachine.ai.provider"] = "src/ai/provider.lua",
     ["mcp-bassmachine.ui.engine"] = "src/ui/engine.lua",
     ["mcp-bassmachine.ui.widgets"] = "src/ui/widgets.lua",

@@ -13,6 +13,7 @@ local Registry = require("mcp-bassmachine.marketplace.registry")
 local HistoryManager = require("mcp-bassmachine.mcp.history")
 local McpRunner = require("mcp-bassmachine.mcp.runner")
 local AiProvider = require("mcp-bassmachine.ai.provider")
+local EnvManager = require("mcp-bassmachine.env.manager")
 
 local app = {}
 
@@ -129,11 +130,11 @@ function app.run_cli_ephemeral_mcp(command_str, _config, history)
   return true
 end
 
-function app.run_tui(config, history, registry, ai)
+function app.run_tui(config, history, registry, ai, env_mgr)
   term.enter_raw_mode()
 
   local engine = Engine.new(config:get("ui.frame_rate", 30))
-  local tabs = { "Marketplaces", "Test & Run", "AI Synth", "History", "Settings" }
+  local tabs = { "Marketplaces", "Test & Run", "AI Synth", "History", "Settings", "Agent Sync" }
   local active_tab_idx = 1
 
   local state = {
@@ -141,10 +142,12 @@ function app.run_tui(config, history, registry, ai)
     selected_tool_idx = 1,
     selected_history_idx = 1,
     selected_setting_idx = 1,
+    selected_target_idx = 1,
+    selected_env_server_idx = 1,
     search_query = "",
     ai_prompt = "Hello! Test MCP tool integration with deepseek/deepseek-v4.1-flash",
     ai_response = nil,
-    status_msg = "Welcome to MCP Bass Machine. Zero-install ready.",
+    status_msg = "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
     active_runner = nil,
   }
 
@@ -172,10 +175,12 @@ function app.run_tui(config, history, registry, ai)
       views.render_history(engine, history, state)
     elseif active_tab_idx == 5 then
       views.render_settings(engine, config, state)
+    elseif active_tab_idx == 6 then
+      views.render_env_manager(engine, env_mgr, state)
     end
 
     -- 4. Draw Status Bar
-    local hotkeys = "[1-5] Tabs │ [↑/↓] Navigate │ [C] Clean │ [S] Save TOML │ [Q] Quit"
+    local hotkeys = "[1-6] Tabs │ [↑/↓] Navigate │ [I] Install │ [D] Remove │ [Q] Quit"
     widgets.draw_status_bar(engine, state.status_msg, hotkeys)
 
     -- Update visualizer & render frame
@@ -197,6 +202,8 @@ function app.run_tui(config, history, registry, ai)
         active_tab_idx = 4
       elseif key == "5" then
         active_tab_idx = 5
+      elseif key == "6" then
+        active_tab_idx = 6
       elseif key == "tab" then
         active_tab_idx = (active_tab_idx % #tabs) + 1
       elseif key == "up" then
@@ -208,6 +215,8 @@ function app.run_tui(config, history, registry, ai)
           state.selected_history_idx = math.max(1, state.selected_history_idx - 1)
         elseif active_tab_idx == 5 then
           state.selected_setting_idx = math.max(1, state.selected_setting_idx - 1)
+        elseif active_tab_idx == 6 then
+          state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
         end
       elseif key == "down" then
         if active_tab_idx == 1 then
@@ -218,6 +227,51 @@ function app.run_tui(config, history, registry, ai)
           state.selected_history_idx = state.selected_history_idx + 1
         elseif active_tab_idx == 5 then
           state.selected_setting_idx = state.selected_setting_idx + 1
+        elseif active_tab_idx == 6 then
+          state.selected_env_server_idx = (state.selected_env_server_idx or 1) + 1
+        end
+      elseif key == "left" and active_tab_idx == 6 then
+        state.selected_target_idx = math.max(1, (state.selected_target_idx or 1) - 1)
+        state.selected_env_server_idx = 1
+      elseif key == "right" and active_tab_idx == 6 then
+        state.selected_target_idx = (state.selected_target_idx or 1) + 1
+        state.selected_env_server_idx = 1
+      elseif key == "i" and active_tab_idx == 1 then
+        -- Install selected marketplace MCP to all environments
+        local items = state.marketplace_items or {}
+        local selected = items[state.selected_mcp_idx or 1]
+        if selected then
+          local spec = {
+            command = selected.command,
+            args = selected.args,
+          }
+          local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
+          local results = env_mgr:add_mcp(sname, spec, "all")
+          local ok_cnt = 0
+          for _, res in ipairs(results) do
+            if res.success then
+              ok_cnt = ok_cnt + 1
+            end
+          end
+          state.status_msg = string.format("Installed '%s' across %d AI agent environments!", sname, ok_cnt)
+        end
+      elseif key == "d" and active_tab_idx == 6 then
+        -- Delete/Remove selected MCP from selected agent
+        local targets = state.env_targets or {}
+        local cur_target = targets[state.selected_target_idx or 1]
+        local s_keys = state.current_target_servers or {}
+        local cur_srv = s_keys[state.selected_env_server_idx or 1]
+        if cur_target and cur_srv then
+          env_mgr:remove_mcp(cur_srv, cur_target.id)
+          state.status_msg = string.format("Removed '%s' from %s.", cur_srv, cur_target.name)
+        end
+      elseif key == "u" and active_tab_idx == 6 then
+        -- Remove selected MCP from ALL agents
+        local s_keys = state.current_target_servers or {}
+        local cur_srv = s_keys[state.selected_env_server_idx or 1]
+        if cur_srv then
+          env_mgr:remove_mcp(cur_srv, "all")
+          state.status_msg = string.format("Purged '%s' from ALL AI agent environments.", cur_srv)
         end
       elseif key == "c" and active_tab_idx == 4 then
         -- Clean all history on user request
@@ -282,11 +336,83 @@ function app.main(args)
   )
   local registry = Registry.new(config)
   local ai = AiProvider.new(config)
+  local env_mgr = EnvManager.new()
 
   local cmd = args[1]
   if cmd == "test" then
     local ok = app.run_cli_test(config, history, ai)
     os.exit(ok and 0 or 1)
+  elseif cmd == "env-list" or cmd == "agents" then
+    local summary = env_mgr:list_all()
+    io.write(string.format("AI Agent Environments (%d detected):\n\n", #summary))
+    for _, t in ipairs(summary) do
+      local s_names = {}
+      for sn in pairs(t.servers) do
+        table.insert(s_names, sn)
+      end
+      table.sort(s_names)
+      local s_str = #s_names > 0 and table.concat(s_names, ", ") or "none"
+      io.write(
+        string.format(
+          "• \27[1;36m%-24s\27[0m [%s]\n  Path: %s\n  Installed MCPs: %s\n\n",
+          t.name,
+          t.exists and "ACTIVE" or "ABSENT",
+          t.path,
+          s_str
+        )
+      )
+    end
+    os.exit(0)
+  elseif cmd == "env-add" or cmd == "add" then
+    local sname = args[2]
+    local command_str = args[3]
+    if not sname or not command_str then
+      io.write('Usage: mcp-bassmachine env-add <server_name> "<command>" [target_agent_id|all]\n')
+      io.write("Examples:\n")
+      io.write('  mcp-bassmachine env-add my-git "uvx mcp-server-git --repository /home" all\n')
+      io.write('  mcp-bassmachine env-add remote-tool "https://my-server.com/sse" antigravity\n')
+      os.exit(1)
+    end
+    local target = args[4] or "all"
+    local spec = {}
+    if command_str:match("^https?://") then
+      spec.url = command_str
+    else
+      local parts = {}
+      for p in command_str:gmatch("%S+") do
+        table.insert(parts, p)
+      end
+      spec.command = parts[1]
+      table.remove(parts, 1)
+      spec.args = parts
+    end
+    local results = env_mgr:add_mcp(sname, spec, target)
+    io.write(string.format("Adding MCP '%s' to target(s): %s\n", sname, target))
+    for _, res in ipairs(results) do
+      if res.success then
+        io.write(string.format("  ✓ %-24s: updated %s\n", res.name, res.path))
+      else
+        io.write(string.format("  ✗ %-24s: failed (%s)\n", res.name, tostring(res.error)))
+      end
+    end
+    os.exit(0)
+  elseif cmd == "env-remove" or cmd == "remove" then
+    local sname = args[2]
+    if not sname then
+      io.write("Usage: mcp-bassmachine env-remove <server_name> [target_agent_id|all]\n")
+      os.exit(1)
+    end
+    local target = args[3] or "all"
+    local results = env_mgr:remove_mcp(sname, target)
+    io.write(string.format("Removing MCP '%s' from target(s): %s\n", sname, target))
+    for _, res in ipairs(results) do
+      if res.success then
+        io.write(string.format("  ✓ %-24s: %s\n", res.name, res.removed and "removed" or "not present"))
+      else
+        io.write(string.format("  ✗ %-24s: failed (%s)\n", res.name, tostring(res.error)))
+      end
+    end
+    os.exit(0)
   elseif cmd == "run" then
     local mcp_cmd = args[2]
     if not mcp_cmd then
@@ -331,7 +457,7 @@ function app.main(args)
     os.exit(0)
   else
     -- Default to interactive TUI
-    app.run_tui(config, history, registry, ai)
+    app.run_tui(config, history, registry, ai, env_mgr)
   end
 end
 

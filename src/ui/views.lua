@@ -74,10 +74,16 @@ function views.render_marketplaces(engine, registry, state)
     end
 
     engine:draw_text(
-      main_h + 2,
+      main_h + 1,
       right_col + 2,
       "Press [Enter] to run ephemeral test session",
       term.palette.fg_magenta .. term.colors.bold
+    )
+    engine:draw_text(
+      main_h + 2,
+      right_col + 2,
+      "Press [I] to Install to All Agents (Antigravity, OpenCode, Claude, etc.)",
+      term.palette.fg_cyan .. term.colors.bold
     )
   else
     engine:draw_text(
@@ -313,6 +319,116 @@ function views.render_settings(engine, config, state)
     "Press [Space] to toggle booleans, [Enter] to edit value, [S] to force save to TOML",
     term.palette.fg_muted
   )
+end
+
+-- 6. Environment Agent Sync View
+function views.render_env_manager(engine, env_mgr, state)
+  local width = engine.cols
+  local main_h = engine.rows - 5
+  local split_col = math.floor(width * 0.40)
+
+  local targets = env_mgr:get_targets()
+  state.env_targets = targets
+
+  engine:draw_box(
+    4,
+    2,
+    main_h,
+    split_col - 2,
+    term.palette.border,
+    term.palette.bg_dark,
+    "Detected AI Agent Environments"
+  )
+
+  local sel_target_idx = state.selected_target_idx or 1
+  if sel_target_idx > #targets then
+    sel_target_idx = #targets
+  end
+
+  widgets.draw_list(engine, targets, sel_target_idx, 4, 2, main_h, split_col - 2, function(t, _)
+    local status = t.exists ~= false and "[ACTIVE]" or "[ABSENT]"
+    return string.format("%-9s %s", status, t.name)
+  end)
+
+  -- Right: Installed MCPs in selected agent
+  local right_col = split_col + 1
+  local right_w = width - right_col
+  local selected_target = targets[sel_target_idx]
+
+  local summary = env_mgr:list_all()
+  local target_info = summary[sel_target_idx]
+  local servers = target_info and target_info.servers or {}
+
+  local s_keys = {}
+  for k in pairs(servers) do
+    table.insert(s_keys, k)
+  end
+  table.sort(s_keys)
+  state.current_target_servers = s_keys
+
+  local right_title =
+    string.format("Installed MCPs: %s (%d)", selected_target and selected_target.name or "Agent", #s_keys)
+  engine:draw_box(4, right_col, main_h, right_w, term.palette.border, term.palette.bg_dark, right_title)
+
+  if #s_keys == 0 then
+    engine:draw_text(6, right_col + 2, "No MCP servers configured for this agent.", term.palette.fg_muted)
+    engine:draw_text(
+      8,
+      right_col + 2,
+      "Path: " .. term.truncate(selected_target.path, right_w - 10),
+      term.palette.fg_primary
+    )
+    engine:draw_text(
+      10,
+      right_col + 2,
+      "Go to [1: Marketplaces] and press [I] to install an MCP here,",
+      term.palette.fg_cyan
+    )
+    engine:draw_text(11, right_col + 2, "or press [A] to add a custom MCP command.", term.palette.fg_cyan)
+  else
+    local sel_srv_idx = state.selected_env_server_idx or 1
+    if sel_srv_idx > #s_keys then
+      sel_srv_idx = #s_keys
+    end
+
+    local r = 6
+    for idx, sname in ipairs(s_keys) do
+      if r > main_h + 1 then
+        break
+      end
+      local is_sel = (idx == sel_srv_idx)
+      local sspec = servers[sname]
+      local cmd_preview = ""
+      if sspec.url then
+        cmd_preview = sspec.url
+      elseif sspec.command then
+        if type(sspec.command) == "table" then
+          cmd_preview = table.concat(sspec.command, " ")
+        else
+          cmd_preview = tostring(sspec.command) .. " " .. table.concat(sspec.args or {}, " ")
+        end
+      end
+
+      local line = string.format(" %-18s │ %s", sname, term.truncate(cmd_preview, right_w - 26))
+      local fg = is_sel and (term.palette.fg_cyan .. term.colors.bold) or term.palette.fg_primary
+      local bg = is_sel and term.palette.bg_highlight or term.palette.bg_dark
+      engine:draw_text(r, right_col + 2, line, fg, bg)
+      r = r + 1
+    end
+
+    engine:draw_text(
+      main_h + 1,
+      right_col + 2,
+      "Press [D] to Remove selected MCP from this Agent",
+      term.palette.fg_red .. term.colors.bold
+    )
+    engine:draw_text(
+      main_h + 2,
+      right_col + 2,
+      "Press [U] to Remove selected MCP from ALL Agents",
+      term.palette.fg_amber .. term.colors.bold
+    )
+  end
 end
 
 return views

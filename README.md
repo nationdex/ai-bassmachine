@@ -29,6 +29,7 @@ An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, test
 - **Zero-Install Ephemeral Execution**: MCP servers run on-demand via isolated FIFO coprocesses (`npx -y`, `uvx`, docker). No global npm or python environment pollution.
 - **Auto-Cleaning History**: Every execution session is tracked in an ephemeral history ledger with execution duration, tool count, and status. Automatically purges old records or cleans on-demand.
 - **Multi-Marketplace Hub**: Real-time discovery aggregating servers from official Model Context Protocol registries, Smithery.ai, Glama, and Awesome-MCP.
+- **Universal AI Agent Environment Sync**: One-key install or removal of MCP servers across all local AI agent environments: **Antigravity**, **OpenCode**, **Claude (Code & Desktop)**, **Cursor IDE**, **VS Code**, and **VS Code Insiders** with format auto-translation.
 - **Hybrid TOML Engine**: Pure Lua TOML parser and serializer. Edit configurations directly in the TUI with live file sync and environment variable interpolation (`${ENV_VAR}`).
 - **Native Multi-AI Synthesis**: Direct tool-calling integration with ZenMux, OpenRouter, DeepSeek, and local LLM endpoints (Ollama/vLLM). The AI receives MCP tool schemas and executes live tool invocations.
 - **Strict Quality Pipeline**: Stylua formatting, Luacheck linting, and Teal (`tl`) typechecked definitions.
@@ -69,6 +70,15 @@ cd mcp-bassmachine
 
 # Check active TOML configuration
 ./bin/mcp-bassmachine check-config
+
+# Inspect MCP servers across all AI agent environments (Antigravity, OpenCode, Claude, Cursor, VS Code)
+./bin/mcp-bassmachine env-list
+
+# Install an MCP server into all AI agents at once (or specify target: antigravity | opencode | claude | all)
+./bin/mcp-bassmachine env-add my-server "uvx mcp-server-git --repository /tmp" all
+
+# Remove an MCP server from all AI agents
+./bin/mcp-bassmachine env-remove my-server all
 ```
 
 ---
@@ -114,10 +124,13 @@ default_model = "anthropic/claude-3.5-sonnet"
 
 | Key | Action |
 |---|---|
-| `1` - `5` | Switch active tab (Marketplaces, Test & Run, AI Synth, History, Settings) |
+| `1` - `6` | Switch active tab (Marketplaces, Test & Run, AI Synth, History, Settings, Agent Sync) |
 | `Tab` | Cycle next tab |
 | `↑` / `↓` | Navigate list items and menu options |
 | `Enter` | Launch ephemeral run (Tab 1), Trigger AI synthesis (Tab 3) |
+| `I` | Install selected Marketplace MCP to ALL AI Agents (Antigravity, OpenCode, Claude, etc.) |
+| `D` | Remove selected MCP from active agent (Tab 6: Agent Sync) |
+| `U` | Remove/Purge selected MCP from ALL AI agents (Tab 6: Agent Sync) |
 | `Space` | Toggle boolean values in Settings (Tab 5) |
 | `C` | Clean all ephemeral session history (Tab 4) |
 | `X` | Clean stale sessions older than retention limit (Tab 4) |
