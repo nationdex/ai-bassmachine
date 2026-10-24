@@ -220,23 +220,30 @@ function app.run_tui(config, history, registry, ai, env_mgr)
         end
       elseif key == "down" then
         if active_tab_idx == 1 then
-          state.selected_mcp_idx = state.selected_mcp_idx + 1
+          local max_m = #(state.marketplace_items or {})
+          state.selected_mcp_idx = math.min(max_m > 0 and max_m or 1, state.selected_mcp_idx + 1)
         elseif active_tab_idx == 2 then
-          state.selected_tool_idx = state.selected_tool_idx + 1
+          local max_t = #(state.active_tools or {})
+          state.selected_tool_idx = math.min(max_t > 0 and max_t or 1, state.selected_tool_idx + 1)
         elseif active_tab_idx == 4 then
-          state.selected_history_idx = state.selected_history_idx + 1
+          local max_h = #(state.history_items or {})
+          state.selected_history_idx = math.min(max_h > 0 and max_h or 1, state.selected_history_idx + 1)
         elseif active_tab_idx == 5 then
-          state.selected_setting_idx = state.selected_setting_idx + 1
+          local max_s = #(state.settings_keys or {})
+          state.selected_setting_idx = math.min(max_s > 0 and max_s or 1, state.selected_setting_idx + 1)
         elseif active_tab_idx == 6 then
-          state.selected_env_server_idx = (state.selected_env_server_idx or 1) + 1
+          local max_srv = #(state.current_target_servers or {})
+          state.selected_env_server_idx =
+            math.min(max_srv > 0 and max_srv or 1, (state.selected_env_server_idx or 1) + 1)
         end
       elseif key == "left" and active_tab_idx == 6 then
         state.selected_target_idx = math.max(1, (state.selected_target_idx or 1) - 1)
         state.selected_env_server_idx = 1
       elseif key == "right" and active_tab_idx == 6 then
-        state.selected_target_idx = (state.selected_target_idx or 1) + 1
+        local max_tgt = #(state.env_targets or {})
+        state.selected_target_idx = math.min(max_tgt > 0 and max_tgt or 1, (state.selected_target_idx or 1) + 1)
         state.selected_env_server_idx = 1
-      elseif key == "i" and active_tab_idx == 1 then
+      elseif (key == "i" or key == "I") and active_tab_idx == 1 then
         -- Install selected marketplace MCP to all environments
         local items = state.marketplace_items or {}
         local selected = items[state.selected_mcp_idx or 1]
@@ -255,23 +262,43 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           end
           state.status_msg = string.format("Installed '%s' across %d AI agent environments!", sname, ok_cnt)
         end
-      elseif key == "d" and active_tab_idx == 6 then
-        -- Delete/Remove selected MCP from selected agent
-        local targets = state.env_targets or {}
-        local cur_target = targets[state.selected_target_idx or 1]
-        local s_keys = state.current_target_servers or {}
-        local cur_srv = s_keys[state.selected_env_server_idx or 1]
-        if cur_target and cur_srv then
-          env_mgr:remove_mcp(cur_srv, cur_target.id)
-          state.status_msg = string.format("Removed '%s' from %s.", cur_srv, cur_target.name)
+      elseif
+        (key == "d" or key == "D" or key == "delete" or key == "backspace")
+        and (active_tab_idx == 6 or active_tab_idx == 1)
+      then
+        if active_tab_idx == 6 then
+          -- Delete/Remove selected MCP from selected agent
+          local targets = state.env_targets or {}
+          local cur_target = targets[state.selected_target_idx or 1]
+          local s_keys = state.current_target_servers or {}
+          local cur_srv = s_keys[state.selected_env_server_idx or 1]
+          if cur_target and cur_srv then
+            env_mgr:remove_mcp(cur_srv, cur_target.id)
+            state.status_msg = string.format("Removed '%s' from %s.", cur_srv, cur_target.name)
+            state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
+          end
+        elseif active_tab_idx == 1 then
+          -- In Marketplaces tab, remove selected marketplace package from ALL environments
+          local items = state.marketplace_items or {}
+          local selected = items[state.selected_mcp_idx or 1]
+          if selected then
+            local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
+            -- Also try direct name or id
+            env_mgr:remove_mcp(sname, "all")
+            env_mgr:remove_mcp(selected.id, "all")
+            local clean_name = selected.id:gsub("^mcp%-", "")
+            env_mgr:remove_mcp(clean_name, "all")
+            state.status_msg = string.format("Removed '%s' from all AI agent environments.", selected.name)
+          end
         end
-      elseif key == "u" and active_tab_idx == 6 then
+      elseif (key == "u" or key == "U") and active_tab_idx == 6 then
         -- Remove selected MCP from ALL agents
         local s_keys = state.current_target_servers or {}
         local cur_srv = s_keys[state.selected_env_server_idx or 1]
         if cur_srv then
           env_mgr:remove_mcp(cur_srv, "all")
           state.status_msg = string.format("Purged '%s' from ALL AI agent environments.", cur_srv)
+          state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
         end
       elseif key == "c" and active_tab_idx == 4 then
         -- Clean all history on user request

@@ -76,14 +76,14 @@ function views.render_marketplaces(engine, registry, state)
     engine:draw_text(
       main_h + 1,
       right_col + 2,
-      "Press [Enter] to run ephemeral test session",
+      "Press [Enter] to run ephemeral test session  │  [I] Install to Agents",
       term.palette.fg_magenta .. term.colors.bold
     )
     engine:draw_text(
       main_h + 2,
       right_col + 2,
-      "Press [I] to Install to All Agents (Antigravity, OpenCode, Claude, etc.)",
-      term.palette.fg_cyan .. term.colors.bold
+      "Press [D] to Remove/Uninstall from All AI Agents",
+      term.palette.fg_red .. term.colors.bold
     )
   else
     engine:draw_text(
@@ -386,46 +386,52 @@ function views.render_env_manager(engine, env_mgr, state)
     )
     engine:draw_text(11, right_col + 2, "or press [A] to add a custom MCP command.", term.palette.fg_cyan)
   else
+    local max_visible = main_h - 7
     local sel_srv_idx = state.selected_env_server_idx or 1
     if sel_srv_idx > #s_keys then
       sel_srv_idx = #s_keys
     end
 
-    local r = 6
-    for idx, sname in ipairs(s_keys) do
-      if r > main_h + 1 then
-        break
-      end
-      local is_sel = (idx == sel_srv_idx)
-      local sspec = servers[sname]
-      local cmd_preview = ""
-      if sspec.url then
-        cmd_preview = sspec.url
-      elseif sspec.command then
-        if type(sspec.command) == "table" then
-          cmd_preview = table.concat(sspec.command, " ")
-        else
-          cmd_preview = tostring(sspec.command) .. " " .. table.concat(sspec.args or {}, " ")
-        end
-      end
+    local scroll_offset = 0
+    if sel_srv_idx > max_visible then
+      scroll_offset = sel_srv_idx - max_visible
+    end
 
-      local line = string.format(" %-18s │ %s", sname, term.truncate(cmd_preview, right_w - 26))
-      local fg = is_sel and (term.palette.fg_cyan .. term.colors.bold) or term.palette.fg_primary
-      local bg = is_sel and term.palette.bg_highlight or term.palette.bg_dark
-      engine:draw_text(r, right_col + 2, line, fg, bg)
-      r = r + 1
+    for i = 1, max_visible do
+      local idx = i + scroll_offset
+      local sname = s_keys[idx]
+      local r = 5 + i
+      if sname then
+        local is_sel = (idx == sel_srv_idx)
+        local sspec = servers[sname]
+        local cmd_preview = ""
+        if sspec.url then
+          cmd_preview = sspec.url
+        elseif sspec.command then
+          if type(sspec.command) == "table" then
+            cmd_preview = table.concat(sspec.command, " ")
+          else
+            cmd_preview = tostring(sspec.command) .. " " .. table.concat(sspec.args or {}, " ")
+          end
+        end
+
+        local line = string.format(" %-18s │ %s", sname, term.truncate(cmd_preview, right_w - 26))
+        local fg = is_sel and (term.palette.fg_cyan .. term.colors.bold) or term.palette.fg_primary
+        local bg = is_sel and term.palette.bg_highlight or term.palette.bg_dark
+        engine:draw_text(r, right_col + 2, line, fg, bg)
+      end
     end
 
     engine:draw_text(
       main_h + 1,
       right_col + 2,
-      "Press [D] to Remove selected MCP from this Agent",
+      "Press [D] / [Del] to Remove from this Agent",
       term.palette.fg_red .. term.colors.bold
     )
     engine:draw_text(
       main_h + 2,
       right_col + 2,
-      "Press [U] to Remove selected MCP from ALL Agents",
+      "Press [U] to Purge from ALL Agents",
       term.palette.fg_amber .. term.colors.bold
     )
   end
