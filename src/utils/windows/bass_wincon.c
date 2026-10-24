@@ -9,10 +9,12 @@
 typedef void (*push_int_fn)(void* L, long long n);
 typedef void (*push_lstring_fn)(void* L, const char* s, size_t len);
 typedef long long (*to_int_fn)(void* L, int idx, int* isnum);
+typedef const char* (*to_lstring_fn)(void* L, int idx, size_t* len);
 
 static push_int_fn p_pushinteger = NULL;
 static push_lstring_fn p_pushlstring = NULL;
 static to_int_fn p_tointeger = NULL;
+static to_lstring_fn p_tolstring = NULL;
 static HANDLE hConsoleIn = INVALID_HANDLE_VALUE;
 static HANDLE hConsoleOut = INVALID_HANDLE_VALUE;
 static DWORD orig_in_mode = 0;
@@ -63,6 +65,9 @@ static void init_lua_api(void) {
                 p_tointeger = (to_int_fn)GetProcAddress(hMods[i], "lua_tointegerx");
             }
         }
+        if (!p_tolstring) {
+            p_tolstring = (to_lstring_fn)GetProcAddress(hMods[i], "lua_tolstring");
+        }
     }
 }
 
@@ -102,6 +107,38 @@ __declspec(dllexport) int win_sleep(void* L) {
         if (val > 0) ms = val;
     }
     Sleep((DWORD)ms);
+    return 0;
+}
+
+__declspec(dllexport) int win_mkdir_p(void* L) {
+    init_lua_api();
+    if (!p_tolstring) return 0;
+    size_t len = 0;
+    const char* path = p_tolstring(L, 1, &len);
+    if (!path || len == 0 || len >= MAX_PATH) return 0;
+
+    char tmp[MAX_PATH];
+    strncpy(tmp, path, sizeof(tmp)-1);
+    tmp[sizeof(tmp)-1] = 0;
+
+    for (char* p = tmp; *p; p++) {
+        if (*p == '/') *p = '\\';
+    }
+
+    for (char* p = tmp; *p; p++) {
+        if (*p == '\\') {
+            *p = 0;
+            if (strlen(tmp) > 0 && tmp[strlen(tmp)-1] != ':') {
+                CreateDirectoryA(tmp, NULL);
+            }
+            *p = '\\';
+        }
+    }
+    int ok = CreateDirectoryA(tmp, NULL) || GetLastError() == ERROR_ALREADY_EXISTS;
+    if (p_pushinteger) {
+        p_pushinteger(L, ok ? 1 : 0);
+        return 1;
+    }
     return 0;
 }
 

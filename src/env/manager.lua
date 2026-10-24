@@ -7,6 +7,7 @@
 -- 5. VS Code & Insiders (~/.config/Code/User/mcp.json, ~/.config/Code - Insiders/User/mcp.json)
 
 local json = require("mcp-bassmachine.utils.json")
+local term = require("mcp-bassmachine.utils.term")
 
 local EnvManager = {}
 EnvManager.__index = EnvManager
@@ -117,9 +118,9 @@ end
 
 local function write_json_file(filepath, data)
   -- Ensure parent directory exists
-  local dir = filepath:match("^(.*)/[^/]+$")
+  local dir = filepath:match("^(.*)[/\\][^/\\]+$")
   if dir then
-    os.execute(string.format("mkdir -p '%s' 2>/dev/null", dir))
+    term.mkdir_p(dir)
   end
 
   local f = io.open(filepath, "w")

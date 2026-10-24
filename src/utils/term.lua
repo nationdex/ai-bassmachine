@@ -57,6 +57,7 @@ local win_init = nil
 local win_cleanup = nil
 local win_sleep = nil
 local win_get_window_size = nil
+local win_mkdir_p = nil
 local win_ffi = nil
 local saved_win_in_mode = nil
 local saved_win_out_mode = nil
@@ -86,12 +87,14 @@ if is_windows then
     local p_clean = package.loadlib(path, "win_cleanup")
     local p_sleep = package.loadlib(path, "win_sleep")
     local p_size = package.loadlib(path, "win_get_window_size")
+    local p_mkdir = package.loadlib(path, "win_mkdir_p")
     if p_init and p_poll and p_clean then
       win_init = p_init
       win_poll_key = p_poll
       win_cleanup = p_clean
       win_sleep = p_sleep
       win_get_window_size = p_size
+      win_mkdir_p = p_mkdir
       break
     end
   end
@@ -129,6 +132,28 @@ local cached_rows = 24
 local cached_cols = 80
 local last_size_check = 0
 local size_poll_interval = 0.5 -- Only query size every 500ms maximum to prevent CPU latency
+
+term.is_windows = is_windows
+
+function term.mkdir_p(dir)
+  if not dir or #dir == 0 then
+    return true
+  end
+  if is_windows then
+    if win_mkdir_p then
+      local ok, res = pcall(win_mkdir_p, dir)
+      if ok and res and res ~= 0 then
+        return true
+      end
+    end
+    -- Fallback for Windows without DLL: convert to backslashes and call cmd.exe /c mkdir
+    local win_dir = dir:gsub("/", "\\")
+    local cmd = string.format('cmd.exe /c "if not exist \\"%s\\" mkdir \\"%s\\"" 2>nul', win_dir, win_dir)
+    return os.execute(cmd)
+  else
+    return os.execute(string.format("mkdir -p '%s' 2>/dev/null", dir))
+  end
+end
 
 function term.get_window_size(force)
   local now
@@ -258,9 +283,6 @@ function term.enter_raw_mode()
           win_ffi.C.SetConsoleMode(hOut, raw_out)
         end
       end)
-    else
-      -- Git Bash / MSYS2 / Mintty fallback on Windows
-      os.execute("stty raw -echo min 0 time 0 2>/dev/null")
     end
   else
     local f = io.popen("stty -g 2>/dev/null", "r")
@@ -296,8 +318,6 @@ function term.exit_raw_mode()
           win_ffi.C.SetConsoleMode(hOut, saved_win_out_mode)
         end
       end)
-    else
-      os.execute("stty sane 2>/dev/null")
     end
   else
     if saved_stty and #saved_stty > 0 then
