@@ -203,4 +203,5 @@ mcp-bassmachine/
 
 ## License
 
-MIT © NationDex
+Apache License 2.0 © (NDS) Nationdex Solutions
+

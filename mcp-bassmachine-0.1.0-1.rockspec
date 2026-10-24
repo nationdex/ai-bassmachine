@@ -17,7 +17,7 @@ description = {
   ]],
   homepage = "https://github.com/nationdex/mcp-bassmachine",
   license = "MIT",
-  maintainer = "NationDex <admin@nationdex.org>",
+  maintainer = "NationDex <arielaram@nationdex.com>",
 }
 
 dependencies = {
