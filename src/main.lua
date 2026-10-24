@@ -154,7 +154,8 @@ function app.run_tui(config, history, registry, ai, env_mgr)
   local running = true
 
   while running do
-    engine.rows, engine.cols = term.get_window_size()
+    local cur_r, cur_c = term.get_window_size()
+    engine:resize(cur_r, cur_c)
     engine:clear()
 
     -- 1. Draw Header

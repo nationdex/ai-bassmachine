@@ -73,18 +73,23 @@ function views.render_marketplaces(engine, registry, state)
       engine:draw_text(r, right_col + 2, "Tags:        " .. table.concat(selected.tags, ", "), term.palette.fg_purple)
     end
 
-    engine:draw_text(
-      main_h + 1,
-      right_col + 2,
-      "Press [Enter] to run ephemeral test session  │  [I] Install to Agents",
-      term.palette.fg_magenta .. term.colors.bold
-    )
-    engine:draw_text(
-      main_h + 2,
-      right_col + 2,
-      "Press [D] to Remove/Uninstall from All AI Agents",
-      term.palette.fg_red .. term.colors.bold
-    )
+    local bottom_row = 3 + main_h
+    if bottom_row - 1 > r then
+      engine:draw_text(
+        bottom_row - 1,
+        right_col + 2,
+        term.truncate("Press [Enter] Ephemeral Run │ [I] Install to Agents", right_w - 4),
+        term.palette.fg_magenta .. term.colors.bold
+      )
+    end
+    if bottom_row > r then
+      engine:draw_text(
+        bottom_row,
+        right_col + 2,
+        term.truncate("Press [D] Remove from All Agents", right_w - 4),
+        term.palette.fg_red .. term.colors.bold
+      )
+    end
   else
     engine:draw_text(
       6,
@@ -313,12 +318,14 @@ function views.render_settings(engine, config, state)
     r = r + 1
   end
 
-  engine:draw_text(
-    main_h + 2,
-    4,
-    "Press [Space] to toggle booleans, [Enter] to edit value, [S] to force save to TOML",
-    term.palette.fg_muted
-  )
+  if main_h > 4 then
+    engine:draw_text(
+      3 + main_h,
+      4,
+      term.truncate("Press [Space] toggle bool, [Enter] edit, [S] save TOML", width - 8),
+      term.palette.fg_muted
+    )
+  end
 end
 
 -- 6. Environment Agent Sync View
@@ -422,18 +429,23 @@ function views.render_env_manager(engine, env_mgr, state)
       end
     end
 
-    engine:draw_text(
-      main_h + 1,
-      right_col + 2,
-      "Press [D] / [Del] to Remove from this Agent",
-      term.palette.fg_red .. term.colors.bold
-    )
-    engine:draw_text(
-      main_h + 2,
-      right_col + 2,
-      "Press [U] to Purge from ALL Agents",
-      term.palette.fg_amber .. term.colors.bold
-    )
+    local bottom_row = 3 + main_h
+    if bottom_row - 1 > 5 then
+      engine:draw_text(
+        bottom_row - 1,
+        right_col + 2,
+        term.truncate("Press [D] / [Del] to Remove from this Agent", right_w - 4),
+        term.palette.fg_red .. term.colors.bold
+      )
+    end
+    if bottom_row > 5 then
+      engine:draw_text(
+        bottom_row,
+        right_col + 2,
+        term.truncate("Press [U] to Purge from ALL Agents", right_w - 4),
+        term.palette.fg_amber .. term.colors.bold
+      )
+    end
   end
 end
 

@@ -50,15 +50,26 @@ function term.move_to(row, col)
 end
 
 function term.get_window_size()
-  local f = io.popen("stty size 2>/dev/null", "r")
+  -- Query /dev/tty explicitly first so SSH and redirected standard streams report accurate window dimensions
+  local f = io.popen("stty size < /dev/tty 2>/dev/null || stty size 2>/dev/null", "r")
   if f then
     local out = f:read("*a")
     f:close()
     local r, c = out:match("(%d+)%s+(%d+)")
     if r and c then
-      return tonumber(r), tonumber(c)
+      local nr, nc = tonumber(r), tonumber(c)
+      if nr and nc and nr > 0 and nc > 0 then
+        return nr, nc
+      end
     end
   end
+
+  local lines = tonumber(os.getenv("LINES"))
+  local columns = tonumber(os.getenv("COLUMNS"))
+  if lines and columns and lines > 0 and columns > 0 then
+    return lines, columns
+  end
+
   return 24, 80
 end
 
