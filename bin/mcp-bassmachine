@@ -6,10 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
 
 LUA_BIN=""
-if command -v lua5.4 >/dev/null 2>&1; then
-  LUA_BIN="lua5.4"
-elif command -v luajit >/dev/null 2>&1; then
+if command -v luajit >/dev/null 2>&1; then
   LUA_BIN="luajit"
+elif command -v lua5.4 >/dev/null 2>&1; then
+  LUA_BIN="lua5.4"
 elif command -v lua >/dev/null 2>&1; then
   LUA_BIN="lua"
 else

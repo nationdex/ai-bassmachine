@@ -45,7 +45,7 @@ fi
 
 # Verify Lua again
 LUA_EXEC=""
-for candidate in lua5.4 luajit lua5.3 lua; do
+for candidate in luajit lua5.4 lua5.3 lua; do
   if command -v "$candidate" >/dev/null 2>&1; then
     LUA_EXEC="$candidate"
     break

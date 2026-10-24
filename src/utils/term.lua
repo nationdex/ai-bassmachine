@@ -55,6 +55,8 @@ local is_windows = (package.config:sub(1, 1) == "\\") or (os.getenv("OS") and os
 local win_poll_key = nil
 local win_init = nil
 local win_cleanup = nil
+local win_sleep = nil
+local win_get_window_size = nil
 local win_ffi = nil
 local saved_win_in_mode = nil
 local saved_win_out_mode = nil
@@ -82,10 +84,14 @@ if is_windows then
     local p_init = package.loadlib(path, "win_init")
     local p_poll = package.loadlib(path, "win_poll_key")
     local p_clean = package.loadlib(path, "win_cleanup")
+    local p_sleep = package.loadlib(path, "win_sleep")
+    local p_size = package.loadlib(path, "win_get_window_size")
     if p_init and p_poll and p_clean then
       win_init = p_init
       win_poll_key = p_poll
       win_cleanup = p_clean
+      win_sleep = p_sleep
+      win_get_window_size = p_size
       break
     end
   end
@@ -98,6 +104,7 @@ if is_windows then
         ffi.cdef([[
           int _kbhit(void);
           int _getch(void);
+          void Sleep(unsigned long dwMilliseconds);
           void* GetStdHandle(int nStdHandle);
           int GetConsoleMode(void* hConsoleHandle, unsigned int* lpMode);
           int SetConsoleMode(void* hConsoleHandle, unsigned int dwMode);
@@ -137,45 +144,17 @@ function term.get_window_size(force)
     return cached_rows, cached_cols
   end
 
-  -- 2. Windows-specific size query (PowerShell RawUI / mode con)
+  -- 2. Windows-specific size query (Direct in-process Win32 query)
   if is_windows then
-    local p = io.popen(
-      "powershell -NoProfile -Command \"$h=$Host.UI.RawUI.WindowSize; Write-Output ($h.Height.ToString()+' '+$h.Width.ToString())\" 2>nul",
-      "r"
-    )
-    if p then
-      local out = p:read("*a")
-      p:close()
-      if out then
-        local r, c = out:match("(%d+)%s+(%d+)")
-        if r and c then
-          local nr, nc = tonumber(r), tonumber(c)
-          if nr and nc and nr > 0 and nc > 0 then
-            cached_rows = nr
-            cached_cols = nc
-            return cached_rows, cached_cols
-          end
-        end
+    if win_get_window_size then
+      local wok, r, c = pcall(win_get_window_size)
+      if wok and r and c and r > 0 and c > 0 then
+        cached_rows = r
+        cached_cols = c
+        return cached_rows, cached_cols
       end
     end
-
-    local mf = io.popen("mode con 2>nul", "r")
-    if mf then
-      local out = mf:read("*a")
-      mf:close()
-      if out then
-        local l = out:match("Lines:%s*(%d+)") or out:match("Linhas:%s*(%d+)") or out:match("Zeilen:%s*(%d+)")
-        local c = out:match("Columns:%s*(%d+)") or out:match("Colunas:%s*(%d+)") or out:match("Spalten:%s*(%d+)")
-        if l and c then
-          local nl, nc = tonumber(l), tonumber(c)
-          if nl and nc and nl > 0 and nc > 0 then
-            cached_rows = nl
-            cached_cols = nc
-            return cached_rows, cached_cols
-          end
-        end
-      end
-    end
+    return cached_rows, cached_cols
   else
     -- 3. Unix: Query stty size via /dev/tty explicitly first so SSH and redirected streams report accurate dimensions
     local f = io.popen("stty size < /dev/tty 2>/dev/null || stty size 2>/dev/null", "r")
@@ -198,15 +177,24 @@ function term.get_window_size(force)
 end
 
 function term.sleep(seconds)
+  if is_windows then
+    local ms = math.floor(seconds * 1000)
+    if win_sleep then
+      pcall(win_sleep, ms)
+      return
+    elseif win_ffi then
+      pcall(win_ffi.C.Sleep, ms)
+      return
+    end
+  end
+
   local ok, socket = pcall(require, "socket")
   if ok and socket and socket.sleep then
     socket.sleep(seconds)
   else
     local ms = math.floor(seconds * 1000)
     if ms > 0 then
-      if is_windows then
-        os.execute(string.format('powershell -NoProfile -Command "Start-Sleep -Milliseconds %d" 2>nul', ms))
-      else
+      if not is_windows then
         os.execute(string.format("sleep %f 2>/dev/null || sleep 1 2>/dev/null", seconds))
       end
     end

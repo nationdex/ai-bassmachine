@@ -8,9 +8,11 @@
 
 typedef void (*push_int_fn)(void* L, long long n);
 typedef void (*push_lstring_fn)(void* L, const char* s, size_t len);
+typedef long long (*to_int_fn)(void* L, int idx);
 
 static push_int_fn p_pushinteger = NULL;
 static push_lstring_fn p_pushlstring = NULL;
+static to_int_fn p_tointeger = NULL;
 static HANDLE hConsoleIn = INVALID_HANDLE_VALUE;
 static HANDLE hConsoleOut = INVALID_HANDLE_VALUE;
 static DWORD orig_in_mode = 0;
@@ -18,7 +20,6 @@ static DWORD orig_out_mode = 0;
 static int raw_enabled = 0;
 
 static void init_handles(void) {
-    // Always open CONIN$ and CONOUT$ directly to bypass any process-level pipe redirection
     if (hConsoleIn == INVALID_HANDLE_VALUE || hConsoleIn == NULL) {
         hConsoleIn = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE,
                                  FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -38,7 +39,7 @@ static void init_handles(void) {
 }
 
 static void init_lua_api(void) {
-    if (p_pushinteger && p_pushlstring) return;
+    if (p_pushinteger && p_pushlstring && p_tointeger) return;
     HMODULE hMods[] = {
         GetModuleHandle(NULL),
         GetModuleHandle("lua54.dll"),
@@ -55,6 +56,12 @@ static void init_lua_api(void) {
         }
         if (!p_pushlstring) {
             p_pushlstring = (push_lstring_fn)GetProcAddress(hMods[i], "lua_pushlstring");
+        }
+        if (!p_tointeger) {
+            p_tointeger = (to_int_fn)GetProcAddress(hMods[i], "lua_tointeger");
+            if (!p_tointeger) {
+                p_tointeger = (to_int_fn)GetProcAddress(hMods[i], "lua_tointegerx");
+            }
         }
     }
 }
@@ -83,6 +90,32 @@ __declspec(dllexport) int win_cleanup(void* L) {
         SetConsoleMode(hConsoleIn, orig_in_mode);
         SetConsoleMode(hConsoleOut, orig_out_mode);
         raw_enabled = 0;
+    }
+    return 0;
+}
+
+__declspec(dllexport) int win_sleep(void* L) {
+    init_lua_api();
+    long long ms = 15;
+    if (p_tointeger) {
+        long long val = p_tointeger(L, 1);
+        if (val > 0) ms = val;
+    }
+    Sleep((DWORD)ms);
+    return 0;
+}
+
+__declspec(dllexport) int win_get_window_size(void* L) {
+    init_handles();
+    init_lua_api();
+    if (!p_pushinteger || hConsoleOut == INVALID_HANDLE_VALUE) return 0;
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(hConsoleOut, &csbi)) {
+        int rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+        int cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        p_pushinteger(L, rows);
+        p_pushinteger(L, cols);
+        return 2;
     }
     return 0;
 }
