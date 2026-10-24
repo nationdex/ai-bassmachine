@@ -200,7 +200,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     elseif active_tab_idx == 5 then
       hotkeys = "[Enter]/[E] Edit │ [Space] Toggle │ [S] Save TOML"
     elseif active_tab_idx == 6 then
-      hotkeys = "[←/→] Agent │ [D] Remove │ [U] Purge All │ [A] Add MCP"
+      hotkeys = "[←/→] Agent │ [S]/[B] Sync to All │ [A] Add │ [D] Remove │ [U] Purge All"
     end
 
     if state.modal then
@@ -483,6 +483,25 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             state.status_msg = string.format("Purged '%s' from ALL AI agent environments.", cur_srv)
             state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
           end
+        elseif (key == "s" or key == "S" or key == "b" or key == "B") and active_tab_idx == 6 then
+          -- Broadcast / Sync selected existent MCP across ALL agent environments
+          local s_keys = state.current_target_servers or {}
+          local cur_srv = s_keys[state.selected_env_server_idx or 1]
+          if cur_srv then
+            state.status_msg = string.format("Broadcasting '%s' across all AI agent environments...", cur_srv)
+            engine:render()
+            local ok, info_or_err = env_mgr:sync_mcp_to_all(cur_srv)
+            if ok then
+              state.status_msg = string.format(
+                "Synced '%s' to ALL agents! (%d environments updated from %s)",
+                cur_srv,
+                info_or_err.total_installed,
+                info_or_err.source_agent
+              )
+            else
+              state.status_msg = "Sync failed: " .. tostring(info_or_err)
+            end
+          end
         elseif (key == "a" or key == "A") and active_tab_idx == 6 then
           -- Add custom MCP to target agent
           local targets = state.env_targets or {}
@@ -673,6 +692,26 @@ function app.main(args)
       else
         io.write(string.format("  ✗ %-24s: failed (%s)\n", res.name, tostring(res.error)))
       end
+    end
+    os.exit(0)
+  elseif cmd == "env-sync" or cmd == "sync" or cmd == "sync-all" then
+    local sname = args[2]
+    if not sname then
+      io.write("Usage: mcp-bassmachine env-sync <server_name>\n")
+      io.write("Example: mcp-bassmachine env-sync uizze\n")
+      os.exit(1)
+    end
+    local ok, info_or_err = env_mgr:sync_mcp_to_all(sname)
+    if ok then
+      io.write(string.format("✓ Successfully broadcasted '%s' across ALL AI agent environments!\n", sname))
+      io.write(string.format("  Source Agent: %s\n", info_or_err.source_agent))
+      io.write(string.format("  Total Environments Updated: %d\n\n", info_or_err.total_installed))
+      for _, res in ipairs(info_or_err.results) do
+        io.write(string.format("  %s %-24s: %s\n", res.success and "✓" or "✗", res.name, res.path))
+      end
+    else
+      io.write(string.format("✗ Sync failed: %s\n", tostring(info_or_err)))
+      os.exit(1)
     end
     os.exit(0)
   elseif cmd == "env-remove" or cmd == "remove" then

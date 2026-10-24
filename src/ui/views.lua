@@ -126,7 +126,7 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
       engine:draw_text(
         bottom_row,
         right_col + 2,
-        term.truncate("Press [/] Search/Filter │ [R] Sync Marketplaces", right_w - 4),
+        term.truncate("Press [/] Search/Filter │ [R] Sync Marketplaces (300+ MCPs)", right_w - 4),
         term.palette.fg_cyan .. term.colors.bold
       )
     end
@@ -460,7 +460,7 @@ function views.render_env_manager(engine, env_mgr, state)
     )
     engine:draw_text(11, right_col + 2, "or press [A] to add a custom MCP command.", term.palette.fg_cyan)
   else
-    local max_visible = main_h - 7
+    local max_visible = main_h - 8
     local sel_srv_idx = state.selected_env_server_idx or 1
     if sel_srv_idx > #s_keys then
       sel_srv_idx = #s_keys
@@ -497,6 +497,14 @@ function views.render_env_manager(engine, env_mgr, state)
     end
 
     local bottom_row = 3 + main_h
+    if bottom_row - 3 > 5 then
+      engine:draw_text(
+        bottom_row - 3,
+        right_col + 2,
+        term.truncate("Press [S] / [B] Broadcast & Install to ALL Agents", right_w - 4),
+        term.palette.fg_cyan .. term.colors.bold
+      )
+    end
     if bottom_row - 2 > 5 then
       engine:draw_text(
         bottom_row - 2,

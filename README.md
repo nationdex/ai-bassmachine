@@ -85,6 +85,9 @@ cd mcp-bassmachine
 # Inspect MCP servers across all AI agent environments (Antigravity, OpenCode, Claude, Cursor, VS Code)
 ./bin/mcp-bassmachine env-list
 
+# Broadcast/Install an existent MCP across ALL AI agents (if it's only present in one or two)
+./bin/mcp-bassmachine env-sync uizze
+
 # Install an MCP server into all AI agents at once (or specify target: antigravity | opencode | claude | all)
 ./bin/mcp-bassmachine env-add my-server "uvx mcp-server-git --repository /tmp" all
 
@@ -140,8 +143,11 @@ default_model = "anthropic/claude-3.5-sonnet"
 | `↑` / `↓` | Navigate list items and menu options |
 | `Enter` | Launch ephemeral run (Tab 1), Trigger AI synthesis (Tab 3) |
 | `I` | Install selected Marketplace MCP to ALL AI Agents (Antigravity, OpenCode, Claude, etc.) |
+| `S` / `B` | Broadcast / Install selected existent MCP to ALL AI agents (Tab 6: Agent Sync) |
 | `D` | Remove selected MCP from active agent (Tab 6: Agent Sync) |
 | `U` | Remove/Purge selected MCP from ALL AI agents (Tab 6: Agent Sync) |
+| `A` | Add a custom MCP to active agent (Tab 6: Agent Sync) |
+| `R` | Sync live MCP marketplaces across Official, Punkpeye, Wong2, and Appcypher (Tab 1) |
 | `Space` | Toggle boolean values in Settings (Tab 5) |
 | `C` | Clean all ephemeral session history (Tab 4) |
 | `X` | Clean stale sessions older than retention limit (Tab 4) |

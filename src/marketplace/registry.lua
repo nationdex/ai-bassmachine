@@ -1,5 +1,6 @@
 -- MCP Bass Machine - Multi-Marketplace MCP Registry
--- Fetches and searches MCP servers from Official Registry, Smithery, Glama, and Awesome-MCP.
+-- Fetches and searches MCP servers from Official Registry, Punkpeye Awesome-MCP,
+-- Wong2 Awesome-MCP, and Appcypher Awesome-MCP registries.
 
 local json = require("mcp-bassmachine.utils.json")
 
@@ -362,6 +363,7 @@ function Registry:save_cache_to_disk()
   end
 end
 
+-- 1. Official MCP Registry (JSON API)
 function Registry.fetch_official_registry()
   local cmd = "curl -s -m 6 'https://registry.modelcontextprotocol.io/v0.1/servers' 2>/dev/null"
   local f = io.popen(cmd, "r")
@@ -431,7 +433,8 @@ function Registry.fetch_official_registry()
   return results
 end
 
-function Registry.fetch_awesome_mcp()
+-- 2. Punkpeye Awesome-MCP Registry
+function Registry.fetch_punkpeye_mcp()
   local cmd = "curl -s -m 8 'https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md' 2>/dev/null"
   local f = io.popen(cmd, "r")
   if not f then
@@ -489,7 +492,139 @@ function Registry.fetch_awesome_mcp()
         category = cur_category,
       })
 
-      if #results >= 120 then
+      if #results >= 100 then
+        break
+      end
+    end
+  end
+
+  return results
+end
+
+-- 3. Wong2 Awesome-MCP Registry
+function Registry.fetch_wong2_mcp()
+  local cmd = "curl -s -m 8 'https://raw.githubusercontent.com/wong2/awesome-mcp-servers/main/README.md' 2>/dev/null"
+  local f = io.popen(cmd, "r")
+  if not f then
+    return {}
+  end
+  local text = f:read("*a")
+  f:close()
+
+  if not text or #text < 100 then
+    return {}
+  end
+
+  local results = {}
+  local seen = {}
+  local cur_category = "Productivity"
+
+  for line in text:gmatch("[^\r\n]+") do
+    local cat_header = line:match("^###%s+(.+)$") or line:match("^##%s+(.+)$")
+    if cat_header then
+      local clean_cat = cat_header:gsub("<[^>]+>", ""):gsub("[^%w%s%-_/]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+      if #clean_cat > 0 and not clean_cat:find("Sponsors", 1, true) then
+        cur_category = clean_cat
+      end
+    end
+
+    local name, url, rest = line:match("^%-%s+%*%*%[([^%]]+)%]%((https?://[^%)]+)%)%*%*%s*%-?%s*(.*)$")
+    if name and url and not seen[name] then
+      seen[name] = true
+      local clean_desc = rest:gsub("%[!%[[^%]]*%]%([^%)]*%)%]%s*", "")
+      clean_desc = clean_desc:gsub("%[[^%]]*%]%([^%)]*%)", "")
+      clean_desc = clean_desc:gsub("[%z\1-\31\128-\255]+", " ")
+      clean_desc = clean_desc:gsub("^[%s%-]+", ""):gsub("%s+$", "")
+      if #clean_desc == 0 then
+        clean_desc = "MCP Server for " .. name
+      end
+
+      local pkg_id = name:gsub("[^%w_%-]", "-"):lower()
+      local cmd_name = name:match("/([^/]+)$") or name
+      table.insert(results, {
+        id = "wong2-" .. pkg_id,
+        name = name,
+        author = name:match("^([^/]+)") or "Wong2 Registry",
+        source = "wong2-mcp",
+        description = clean_desc:sub(1, 140),
+        command = "npx",
+        args = { "-y", cmd_name },
+        url = url,
+        tags = { "wong2", "registry", cur_category },
+        category = cur_category,
+      })
+
+      if #results >= 100 then
+        break
+      end
+    end
+  end
+
+  return results
+end
+
+-- 4. Appcypher Awesome-MCP Registry
+function Registry.fetch_appcypher_mcp()
+  local cmd =
+    "curl -s -m 8 'https://raw.githubusercontent.com/appcypher/awesome-mcp-servers/main/README.md' 2>/dev/null"
+  local f = io.popen(cmd, "r")
+  if not f then
+    return {}
+  end
+  local text = f:read("*a")
+  f:close()
+
+  if not text or #text < 100 then
+    return {}
+  end
+
+  local results = {}
+  local seen = {}
+  local cur_category = "Utilities"
+
+  for line in text:gmatch("[^\r\n]+") do
+    local cat_header = line:match("^###%s+(.+)$") or line:match("^##%s+(.+)$")
+    if cat_header then
+      local clean_cat = cat_header:gsub("<[^>]+>", ""):gsub("[^%w%s%-_/]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+      if #clean_cat > 0 then
+        cur_category = clean_cat
+      end
+    end
+
+    local name, url, rest = line:match("%[([^%]]+)%]%((https?://github%.com/[^%)]+)%)%s*%-?%s*(.*)$")
+    if
+      name
+      and url
+      and not seen[name]
+      and not name:find("<img", 1, true)
+      and not name:find("Claude", 1, true)
+      and not name:find("Visual Studio", 1, true)
+    then
+      seen[name] = true
+      local clean_desc = rest:gsub("<[^>]+>", "")
+      clean_desc = clean_desc:gsub("%[!%[[^%]]*%]%([^%)]*%)%]%s*", "")
+      clean_desc = clean_desc:gsub("[%z\1-\31\128-\255]+", " ")
+      clean_desc = clean_desc:gsub("^[%s%-]+", ""):gsub("%s+$", "")
+      if #clean_desc == 0 then
+        clean_desc = "Server for " .. name
+      end
+
+      local pkg_id = name:gsub("[^%w_%-]", "-"):lower()
+      local cmd_name = url:match("github%.com/[^/]+/([^/#%?]+)") or name
+      table.insert(results, {
+        id = "appcypher-" .. pkg_id,
+        name = name,
+        author = url:match("github%.com/([^/]+)") or "Community",
+        source = "appcypher-mcp",
+        description = clean_desc:sub(1, 140),
+        command = "npx",
+        args = { "-y", cmd_name },
+        url = url,
+        tags = { "appcypher", "community", cur_category },
+        category = cur_category,
+      })
+
+      if #results >= 80 then
         break
       end
     end
@@ -569,22 +704,26 @@ end
 
 function Registry:refresh_marketplaces()
   local official_servers = self.fetch_official_registry()
-  local awesome_servers = self.fetch_awesome_mcp()
+  local punkpeye_servers = self.fetch_punkpeye_mcp()
+  local wong2_servers = self.fetch_wong2_mcp()
+  local appcypher_servers = self.fetch_appcypher_mcp()
 
   local combined = {}
   local seen = {}
-  for _, it in ipairs(official_servers) do
-    if not seen[it.name] then
-      seen[it.name] = true
-      table.insert(combined, it)
+
+  local function add_list(list)
+    for _, it in ipairs(list) do
+      if not seen[it.name] then
+        seen[it.name] = true
+        table.insert(combined, it)
+      end
     end
   end
-  for _, it in ipairs(awesome_servers) do
-    if not seen[it.name] then
-      seen[it.name] = true
-      table.insert(combined, it)
-    end
-  end
+
+  add_list(official_servers)
+  add_list(punkpeye_servers)
+  add_list(wong2_servers)
+  add_list(appcypher_servers)
 
   if #combined > 0 then
     self.cache = combined
