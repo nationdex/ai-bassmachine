@@ -1,0 +1,25 @@
+# Dependency & build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+.luarocks/
+lua_modules/
+luarocks.lock
+
+# History & runtime state
+.bassmachine_history.json
+*.log
+/tmp/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Testing
+tests/tmp/

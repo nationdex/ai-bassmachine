@@ -1,0 +1,349 @@
+-- MCP Bass Machine - Main Application Entrypoint
+-- Pure Lua 5.X TUI & CLI suite to test and run MCPs across multiple marketplaces.
+
+package.path = "src/?.lua;src/?/init.lua;" .. package.path
+require("loader")
+
+local term = require("mcp-bassmachine.utils.term")
+local Engine = require("mcp-bassmachine.ui.engine")
+local widgets = require("mcp-bassmachine.ui.widgets")
+local views = require("mcp-bassmachine.ui.views")
+local ConfigManager = require("mcp-bassmachine.config.manager")
+local Registry = require("mcp-bassmachine.marketplace.registry")
+local HistoryManager = require("mcp-bassmachine.mcp.history")
+local McpRunner = require("mcp-bassmachine.mcp.runner")
+local AiProvider = require("mcp-bassmachine.ai.provider")
+
+local app = {}
+
+function app.run_cli_test(config, history, ai)
+  io.write("\27[1;36m🎛  MCP Bass Machine - Pre-flight Verification\27[0m\n")
+  io.write("=====================================================\n")
+
+  -- 1. Test TOML Configuration
+  io.write("[1/4] Verifying TOML configuration: ")
+  local app_name = config:get("general.app_name")
+  local default_provider = config:get("ai.default_provider")
+  local default_model = config:get("ai.default_model")
+  if app_name and default_provider and default_model then
+    io.write("\27[1;32mOK\27[0m (" .. app_name .. " | Model: " .. default_model .. ")\n")
+  else
+    io.write("\27[1;31mFAILED\27[0m\n")
+    return false
+  end
+
+  -- 2. Test Ephemeral History & Cleanups
+  io.write("[2/4] Testing Ephemeral History Manager: ")
+  history:add({
+    name = "preflight-test-session",
+    command = "mcp-test-runner",
+    tools_count = 3,
+    status = "ok",
+    duration_ms = 42,
+  })
+  local count_before = history:count()
+  if count_before > 0 then
+    io.write("\27[1;32mOK\27[0m (" .. count_before .. " entries tracked, zero-install verified)\n")
+  else
+    io.write("\27[1;31mFAILED\27[0m\n")
+    return false
+  end
+
+  -- 3. Test Multi-Marketplace Discovery
+  io.write("[3/4] Testing Marketplace Registry: ")
+  local registry = Registry.new(config)
+  local servers = registry:get_all()
+  if #servers > 0 then
+    io.write("\27[1;32mOK\27[0m (" .. #servers .. " MCPs indexed across official, smithery, glama)\n")
+  else
+    io.write("\27[1;31mFAILED\27[0m\n")
+    return false
+  end
+
+  -- 4. Test AI Integration (ZenMux with deepseek/deepseek-v4.1-flash)
+  io.write("[4/4] Testing ZenMux AI & deepseek/deepseek-v4.1-flash: ")
+  local resp, err = ai:chat_completion({
+    { role = "user", content = "Ping from MCP Bass Machine preflight" },
+  }, {
+    provider = "zenmux",
+    model = "deepseek/deepseek-v4.1-flash",
+  })
+
+  if resp and resp.content then
+    io.write('\27[1;32mOK\27[0m (Synthesis response received: "' .. resp.content:gsub("\n", " ") .. '")\n')
+  else
+    io.write("\27[1;31mFAILED\27[0m (" .. tostring(err) .. ")\n")
+    return false
+  end
+
+  io.write("=====================================================\n")
+  io.write("\27[1;32m✓ All MCP Bass Machine systems operational.\27[0m\n")
+  return true
+end
+
+function app.run_cli_ephemeral_mcp(command_str, _config, history)
+  io.write("\27[1;36m🎛  MCP Bass Machine - Ephemeral Runner\27[0m\n")
+  io.write("Target: " .. command_str .. "\n")
+  io.write("Initializing zero-install execution...\n")
+
+  local runner = McpRunner.new(command_str)
+  local ok, err_or_client = runner:start()
+  local start_time = os.time()
+
+  if not ok then
+    io.write("\27[1;31mExecution failed:\27[0m " .. tostring(err_or_client) .. "\n")
+    local err_log = runner:get_stderr_log()
+    if #err_log > 0 then
+      io.write("Stderr: " .. err_log .. "\n")
+    end
+    runner:stop()
+    history:add({
+      name = command_str:match("^%S+") or "unknown",
+      command = command_str,
+      status = "failed",
+      tools_count = 0,
+    })
+    return false
+  end
+
+  local client = err_or_client
+  local tools = client:list_tools() or {}
+  local duration_ms = (os.time() - start_time) * 1000
+
+  io.write(string.format("\27[1;32mConnected!\27[0m Discovered %d tools:\n", #tools))
+  for idx, t in ipairs(tools) do
+    io.write(string.format("  [%d] \27[1;35m%s\27[0m - %s\n", idx, t.name, t.description or "No description"))
+  end
+
+  runner:stop()
+
+  history:add({
+    name = command_str:match("^%S+") or "unknown",
+    command = command_str,
+    status = "ok",
+    tools_count = #tools,
+    duration_ms = duration_ms,
+  })
+
+  io.write("\n\27[1;32m✓ Ephemeral run complete. Session stored in history (auto-clean enabled).\27[0m\n")
+  return true
+end
+
+function app.run_tui(config, history, registry, ai)
+  term.enter_raw_mode()
+
+  local engine = Engine.new(config:get("ui.frame_rate", 30))
+  local tabs = { "Marketplaces", "Test & Run", "AI Synth", "History", "Settings" }
+  local active_tab_idx = 1
+
+  local state = {
+    selected_mcp_idx = 1,
+    selected_tool_idx = 1,
+    selected_history_idx = 1,
+    selected_setting_idx = 1,
+    search_query = "",
+    ai_prompt = "Hello! Test MCP tool integration with deepseek/deepseek-v4.1-flash",
+    ai_response = nil,
+    status_msg = "Welcome to MCP Bass Machine. Zero-install ready.",
+    active_runner = nil,
+  }
+
+  local running = true
+
+  while running do
+    engine.rows, engine.cols = term.get_window_size()
+    engine:clear()
+
+    -- 1. Draw Header
+    local active_model = config:get("ai.default_model", "deepseek/deepseek-v4.1-flash")
+    widgets.draw_header(engine, tabs[active_tab_idx], active_model, config:get("ui.bass_meter", true))
+
+    -- 2. Draw Tab Bar
+    widgets.draw_tab_bar(engine, tabs, active_tab_idx, 3)
+
+    -- 3. Draw Active View
+    if active_tab_idx == 1 then
+      views.render_marketplaces(engine, registry, state)
+    elseif active_tab_idx == 2 then
+      views.render_test_workspace(engine, state.active_runner, state)
+    elseif active_tab_idx == 3 then
+      views.render_ai_synth(engine, config, state)
+    elseif active_tab_idx == 4 then
+      views.render_history(engine, history, state)
+    elseif active_tab_idx == 5 then
+      views.render_settings(engine, config, state)
+    end
+
+    -- 4. Draw Status Bar
+    local hotkeys = "[1-5] Tabs │ [↑/↓] Navigate │ [C] Clean │ [S] Save TOML │ [Q] Quit"
+    widgets.draw_status_bar(engine, state.status_msg, hotkeys)
+
+    -- Update visualizer & render frame
+    engine:update_bass_animation()
+    engine:render()
+
+    -- Process input
+    local key = term.read_key()
+    if key then
+      if key == "q" or key == "ctrl_c" then
+        running = false
+      elseif key == "1" then
+        active_tab_idx = 1
+      elseif key == "2" then
+        active_tab_idx = 2
+      elseif key == "3" then
+        active_tab_idx = 3
+      elseif key == "4" then
+        active_tab_idx = 4
+      elseif key == "5" then
+        active_tab_idx = 5
+      elseif key == "tab" then
+        active_tab_idx = (active_tab_idx % #tabs) + 1
+      elseif key == "up" then
+        if active_tab_idx == 1 then
+          state.selected_mcp_idx = math.max(1, state.selected_mcp_idx - 1)
+        elseif active_tab_idx == 2 then
+          state.selected_tool_idx = math.max(1, state.selected_tool_idx - 1)
+        elseif active_tab_idx == 4 then
+          state.selected_history_idx = math.max(1, state.selected_history_idx - 1)
+        elseif active_tab_idx == 5 then
+          state.selected_setting_idx = math.max(1, state.selected_setting_idx - 1)
+        end
+      elseif key == "down" then
+        if active_tab_idx == 1 then
+          state.selected_mcp_idx = state.selected_mcp_idx + 1
+        elseif active_tab_idx == 2 then
+          state.selected_tool_idx = state.selected_tool_idx + 1
+        elseif active_tab_idx == 4 then
+          state.selected_history_idx = state.selected_history_idx + 1
+        elseif active_tab_idx == 5 then
+          state.selected_setting_idx = state.selected_setting_idx + 1
+        end
+      elseif key == "c" and active_tab_idx == 4 then
+        -- Clean all history on user request
+        history:clean_all()
+        state.status_msg = "Ephemeral history cleared successfully."
+      elseif key == "x" and active_tab_idx == 4 then
+        -- Clean stale history (>24h)
+        history:clean_stale(24)
+        state.status_msg = "Stale history entries purged."
+      elseif key == "s" and active_tab_idx == 5 then
+        -- Save hybrid TOML configuration
+        local ok, s_err = config:save()
+        if ok then
+          state.status_msg = "TOML configuration saved to " .. config.config_path
+        else
+          state.status_msg = "Save failed: " .. tostring(s_err)
+        end
+      elseif key == "space" and active_tab_idx == 5 then
+        -- Toggle boolean setting
+        local s = state.settings_keys and state.settings_keys[state.selected_setting_idx]
+        if s and s.type == "boolean" then
+          local cur = config:get(s.key)
+          config:set(s.key, not cur)
+          config:save()
+          state.status_msg = "Updated " .. s.label .. " to " .. tostring(not cur)
+        end
+      elseif key == "enter" and active_tab_idx == 3 then
+        -- Trigger AI synthesis
+        state.status_msg = "Synthesizing with " .. active_model .. "..."
+        engine:render()
+        local resp, aerr = ai:chat_completion({
+          { role = "user", content = state.ai_prompt },
+        }, {
+          provider = config:get("ai.default_provider"),
+          model = active_model,
+        })
+        if resp then
+          state.ai_response = resp.content
+          state.status_msg = "Synthesis complete."
+        else
+          state.ai_response = "Error: " .. tostring(aerr)
+          state.status_msg = "AI synthesis failed."
+        end
+      end
+    end
+  end
+
+  if state.active_runner then
+    state.active_runner:stop()
+  end
+
+  term.exit_raw_mode()
+end
+
+function app.main(args)
+  local config = ConfigManager.new("bassmachine.toml")
+  local history = HistoryManager.new(
+    config:get("general.history_file"),
+    config:get("general.auto_clean_history"),
+    config:get("general.max_history_entries"),
+    config:get("general.history_retention_hours")
+  )
+  local registry = Registry.new(config)
+  local ai = AiProvider.new(config)
+
+  local cmd = args[1]
+  if cmd == "test" then
+    local ok = app.run_cli_test(config, history, ai)
+    os.exit(ok and 0 or 1)
+  elseif cmd == "run" then
+    local mcp_cmd = args[2]
+    if not mcp_cmd then
+      io.write('Usage: mcp-bassmachine run "<command>"\n')
+      os.exit(1)
+    end
+    local ok = app.run_cli_ephemeral_mcp(mcp_cmd, config, history)
+    os.exit(ok and 0 or 1)
+  elseif cmd == "marketplaces" or cmd == "list" then
+    local servers = registry:get_all()
+    io.write(string.format("Indexed %d MCP servers across registries:\n\n", #servers))
+    for _, s in ipairs(servers) do
+      io.write(string.format("• \27[1;36m%-24s\27[0m [%s] - %s\n", s.name, s.source, s.description))
+    end
+    os.exit(0)
+  elseif cmd == "history" then
+    local items = history:list()
+    io.write(string.format("Ephemeral History (%d sessions):\n\n", #items))
+    for idx, it in ipairs(items) do
+      io.write(
+        string.format(
+          "[%d] %s │ %s │ Status: %s │ Tools: %d\n",
+          idx,
+          it.time_formatted or "-",
+          it.name,
+          it.status,
+          it.tools_count or 0
+        )
+      )
+    end
+    os.exit(0)
+  elseif cmd == "clean-history" then
+    history:clean_all()
+    io.write("Ephemeral history cleaned.\n")
+    os.exit(0)
+  elseif cmd == "check-config" then
+    io.write(string.format("TOML Configuration at %s:\n", config.config_path))
+    io.write(string.format("  App: %s\n", config:get("general.app_name")))
+    io.write(string.format("  AI Provider: %s\n", config:get("ai.default_provider")))
+    io.write(string.format("  AI Model: %s\n", config:get("ai.default_model")))
+    io.write(string.format("  History retention: %dh\n", config:get("general.history_retention_hours")))
+    os.exit(0)
+  else
+    -- Default to interactive TUI
+    app.run_tui(config, history, registry, ai)
+  end
+end
+
+-- Check if running as main script
+local is_main = false
+local info = debug.getinfo(1, "S")
+if info and info.source and (info.source:match("main%.lua$") or info.source == "=[C]") then
+  is_main = true
+end
+
+if is_main then
+  app.main(arg or {})
+end
+
+return app

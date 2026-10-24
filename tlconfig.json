@@ -1,0 +1,11 @@
+{
+  "source_dir": "src",
+  "build_dir": "build",
+  "include_dir": [
+    "src",
+    "types"
+  ],
+  "global_env_def": "lua54",
+  "module_format": "standard",
+  "gen_compat": "off"
+}

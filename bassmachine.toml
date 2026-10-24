@@ -1,0 +1,55 @@
+# MCP Bass Machine Configuration
+# Hybrid TOML configuration: editable from TUI and dynamically loaded.
+
+[general]
+app_name = "MCP Bass Machine"
+log_level = "info"
+history_file = ".bassmachine_history.json"
+auto_clean_history = true
+max_history_entries = 50
+history_retention_hours = 24
+
+[ui]
+theme = "neon-bass"        # neon-bass | cyberpunk | retro-terminal | monochrome
+frame_rate = 30
+show_fps = false
+mouse_support = true
+bass_meter = true           # Animated bass equalizer visualizer in header
+
+[ai]
+default_provider = "zenmux" # zenmux | openrouter | openai | deepseek | ollama
+default_model = "deepseek/deepseek-v4.1-flash"
+temperature = 0.7
+max_tokens = 4096
+request_timeout_seconds = 60
+
+[providers.zenmux]
+name = "ZenMux AI"
+base_url = "https://zenmux.ai/api/v1"
+api_key = "${ZENMUX_API_KEY}"
+default_model = "deepseek/deepseek-v4.1-flash"
+
+[providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+api_key = "${OPENROUTER_API_KEY}"
+default_model = "anthropic/claude-3.5-sonnet"
+
+[providers.deepseek]
+name = "DeepSeek Native"
+base_url = "https://api.deepseek.com/v1"
+api_key = "${DEEPSEEK_API_KEY}"
+default_model = "deepseek-chat"
+
+[providers.ollama]
+name = "Ollama Local"
+base_url = "http://localhost:11434/v1"
+api_key = "ollama"
+default_model = "llama3:latest"
+
+[marketplaces]
+cache_ttl_minutes = 60
+enable_smithery = true
+enable_glama = true
+enable_awesome_mcp = true
+enable_mcp_registry = true

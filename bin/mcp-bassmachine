@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# MCP Bass Machine - CLI / TUI Launcher
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+LUA_BIN=""
+if command -v lua5.4 >/dev/null 2>&1; then
+  LUA_BIN="lua5.4"
+elif command -v luajit >/dev/null 2>&1; then
+  LUA_BIN="luajit"
+elif command -v lua >/dev/null 2>&1; then
+  LUA_BIN="lua"
+else
+  echo "Error: Lua 5.X or LuaJIT not found in PATH" >&2
+  exit 1
+fi
+
+exec "$LUA_BIN" src/main.lua "$@"

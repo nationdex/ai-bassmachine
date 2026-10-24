@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-format:
+    name: Lint, Format & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Lua & Luarocks
+        uses: hishamhm/gh-actions-lua@master
+        with:
+          luaVersion: "5.4"
+
+      - name: Setup Luarocks
+        uses: hishamhm/gh-actions-luarocks@master
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Stylua, Luacheck, and Teal
+        run: |
+          bun install -g @johnnymorganz/stylua-bin
+          luarocks install luacheck
+          luarocks install tl
+
+      - name: Check Formatting (Stylua)
+        run: |
+          stylua --check src tests
+
+      - name: Lint Code (Luacheck)
+        run: |
+          luacheck src tests
+
+      - name: Typecheck (Teal)
+        run: |
+          tl check types/mcp_bassmachine.d.tl
+
+  test-matrix:
+    name: Test on Lua ${{ matrix.lua-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lua-version: ["5.1", "5.2", "5.3", "5.4", "luajit-openresty"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Lua
+        uses: hishamhm/gh-actions-lua@master
+        with:
+          luaVersion: ${{ matrix.lua-version }}
+
+      - name: Run Core Test Suite
+        run: |
+          lua tests/test_json.lua
+          lua tests/test_toml.lua
+          lua tests/test_history.lua
+          lua tests/test_mcp_protocol.lua
+
+      - name: Verify CLI Entrypoint
+        run: |
+          chmod +x bin/mcp-bassmachine
+          ./bin/mcp-bassmachine list
+          ./bin/mcp-bassmachine check-config
