@@ -1,5 +1,6 @@
 -- MCP Bass Machine - Terminal & ANSI Engine
--- Robust raw mode, screen sizing, double-buffered rendering, and visual themes.
+-- Robust raw mode, cross-platform sizing (Linux, macOS, Windows CMD / PowerShell 5.0 - 7+),
+-- double-buffered rendering, and visual themes.
 
 local term = {}
 
@@ -49,10 +50,12 @@ function term.move_to(row, col)
   return string.format("\27[%d;%dH", row, col)
 end
 
+local is_windows = (package.config:sub(1, 1) == "\\") or (os.getenv("OS") and os.getenv("OS"):match("Windows"))
+
 local cached_rows = 24
 local cached_cols = 80
 local last_size_check = 0
-local size_poll_interval = 0.5 -- Only query stty size every 500ms maximum to prevent CPU latency
+local size_poll_interval = 0.5 -- Only query size every 500ms maximum to prevent CPU latency
 
 function term.get_window_size(force)
   local now
@@ -69,28 +72,70 @@ function term.get_window_size(force)
 
   last_size_check = now
 
-  -- Query /dev/tty explicitly first so SSH and redirected standard streams report accurate window dimensions
-  local f = io.popen("stty size < /dev/tty 2>/dev/null || stty size 2>/dev/null", "r")
-  if f then
-    local out = f:read("*a")
-    f:close()
-    local r, c = out:match("(%d+)%s+(%d+)")
-    if r and c then
-      local nr, nc = tonumber(r), tonumber(c)
-      if nr and nc and nr > 0 and nc > 0 then
-        cached_rows = nr
-        cached_cols = nc
-        return cached_rows, cached_cols
-      end
-    end
-  end
-
+  -- 1. Try environment variables first if available
   local lines = tonumber(os.getenv("LINES"))
   local columns = tonumber(os.getenv("COLUMNS"))
   if lines and columns and lines > 0 and columns > 0 then
     cached_rows = lines
     cached_cols = columns
     return cached_rows, cached_cols
+  end
+
+  -- 2. Windows-specific size query (PowerShell RawUI / mode con)
+  if is_windows then
+    local p = io.popen(
+      "powershell -NoProfile -Command \"$h=$Host.UI.RawUI.WindowSize; Write-Output ($h.Height.ToString()+' '+$h.Width.ToString())\" 2>nul",
+      "r"
+    )
+    if p then
+      local out = p:read("*a")
+      p:close()
+      if out then
+        local r, c = out:match("(%d+)%s+(%d+)")
+        if r and c then
+          local nr, nc = tonumber(r), tonumber(c)
+          if nr and nc and nr > 0 and nc > 0 then
+            cached_rows = nr
+            cached_cols = nc
+            return cached_rows, cached_cols
+          end
+        end
+      end
+    end
+
+    local mf = io.popen("mode con 2>nul", "r")
+    if mf then
+      local out = mf:read("*a")
+      mf:close()
+      if out then
+        local l = out:match("Lines:%s*(%d+)") or out:match("Linhas:%s*(%d+)") or out:match("Zeilen:%s*(%d+)")
+        local c = out:match("Columns:%s*(%d+)") or out:match("Colunas:%s*(%d+)") or out:match("Spalten:%s*(%d+)")
+        if l and c then
+          local nl, nc = tonumber(l), tonumber(c)
+          if nl and nc and nl > 0 and nc > 0 then
+            cached_rows = nl
+            cached_cols = nc
+            return cached_rows, cached_cols
+          end
+        end
+      end
+    end
+  else
+    -- 3. Unix: Query stty size via /dev/tty explicitly first so SSH and redirected streams report accurate dimensions
+    local f = io.popen("stty size < /dev/tty 2>/dev/null || stty size 2>/dev/null", "r")
+    if f then
+      local out = f:read("*a")
+      f:close()
+      local r, c = out:match("(%d+)%s+(%d+)")
+      if r and c then
+        local nr, nc = tonumber(r), tonumber(c)
+        if nr and nc and nr > 0 and nc > 0 then
+          cached_rows = nr
+          cached_cols = nc
+          return cached_rows, cached_cols
+        end
+      end
+    end
   end
 
   return cached_rows, cached_cols
@@ -101,10 +146,13 @@ function term.sleep(seconds)
   if ok and socket and socket.sleep then
     socket.sleep(seconds)
   else
-    -- Fallback non-busy sleep
     local ms = math.floor(seconds * 1000)
     if ms > 0 then
-      os.execute(string.format("sleep %f 2>/dev/null || sleep 1 2>/dev/null", seconds))
+      if is_windows then
+        os.execute(string.format('powershell -NoProfile -Command "Start-Sleep -Milliseconds %d" 2>nul', ms))
+      else
+        os.execute(string.format("sleep %f 2>/dev/null || sleep 1 2>/dev/null", seconds))
+      end
     end
   end
 end
@@ -112,15 +160,21 @@ end
 local saved_stty = nil
 
 function term.enter_raw_mode()
-  local f = io.popen("stty -g 2>/dev/null", "r")
-  if f then
-    saved_stty = f:read("*a")
-    f:close()
-    if saved_stty then
-      saved_stty = saved_stty:gsub("%s+", "")
+  if not is_windows then
+    local f = io.popen("stty -g 2>/dev/null", "r")
+    if f then
+      saved_stty = f:read("*a")
+      f:close()
+      if saved_stty then
+        saved_stty = saved_stty:gsub("%s+", "")
+      end
     end
+    os.execute("stty raw -echo min 0 time 0 2>/dev/null")
+  else
+    -- On Windows, enable UTF-8 code page (65001) for CMD / PowerShell 5.0 - 7+
+    os.execute("chcp 65001 >nul 2>nul")
   end
-  os.execute("stty raw -echo min 0 time 0 2>/dev/null")
+
   io.write(term.colors.alt_screen_on)
   io.write(term.colors.hide_cursor)
   io.write(term.colors.mouse_on)
@@ -132,10 +186,13 @@ function term.exit_raw_mode()
   io.write(term.colors.show_cursor)
   io.write(term.colors.alt_screen_off)
   io.flush()
-  if saved_stty and #saved_stty > 0 then
-    os.execute("stty " .. saved_stty .. " 2>/dev/null")
-  else
-    os.execute("stty sane 2>/dev/null")
+
+  if not is_windows then
+    if saved_stty and #saved_stty > 0 then
+      os.execute("stty " .. saved_stty .. " 2>/dev/null")
+    else
+      os.execute("stty sane 2>/dev/null")
+    end
   end
 end
 
@@ -195,6 +252,25 @@ local function parse_keys_from_chunk(stream)
           table.insert(keys, "esc")
           i = i + 1
         end
+      elseif stream:sub(i + 1, i + 1) == "O" and i + 2 <= len then
+        -- SS3 sequence (PowerShell / Windows Terminal arrow keys)
+        local c3 = stream:sub(i + 2, i + 2)
+        i = i + 3
+        if c3 == "A" then
+          table.insert(keys, "up")
+        elseif c3 == "B" then
+          table.insert(keys, "down")
+        elseif c3 == "C" then
+          table.insert(keys, "right")
+        elseif c3 == "D" then
+          table.insert(keys, "left")
+        elseif c3 == "H" then
+          table.insert(keys, "home")
+        elseif c3 == "F" then
+          table.insert(keys, "end")
+        else
+          table.insert(keys, "ss3_" .. c3)
+        end
       else
         local c2 = stream:sub(i + 1, i + 1)
         i = i + 2
@@ -203,6 +279,33 @@ local function parse_keys_from_chunk(stream)
         else
           table.insert(keys, "alt_" .. c2)
         end
+      end
+    elseif c == "\0" or c == "\224" then
+      -- Windows CONIN lead byte (0x00 or 0xE0) for arrows / nav keys in CMD & PowerShell
+      if i + 1 <= len then
+        local code = stream:byte(i + 1)
+        i = i + 2
+        if code == 72 then
+          table.insert(keys, "up")
+        elseif code == 80 then
+          table.insert(keys, "down")
+        elseif code == 77 then
+          table.insert(keys, "right")
+        elseif code == 75 then
+          table.insert(keys, "left")
+        elseif code == 71 then
+          table.insert(keys, "home")
+        elseif code == 79 then
+          table.insert(keys, "end")
+        elseif code == 73 then
+          table.insert(keys, "page_up")
+        elseif code == 81 then
+          table.insert(keys, "page_down")
+        elseif code == 83 then
+          table.insert(keys, "delete")
+        end
+      else
+        i = i + 1
       end
     elseif c == "\127" or c == "\8" then
       table.insert(keys, "backspace")
@@ -257,7 +360,7 @@ function term.read_keys()
     table.insert(keys, table.remove(input_buffer, 1))
   end
 
-  -- In raw mode with min 0 time 0, read available chunk non-blockingly
+  -- In raw mode, read available chunk non-blockingly
   local chunk = io.read(256)
   if chunk and #chunk > 0 then
     local parsed = parse_keys_from_chunk(chunk)

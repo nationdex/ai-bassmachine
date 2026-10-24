@@ -160,19 +160,26 @@ if (-not (Test-Path "$BinDir")) {
 $CmdWrapper = "$BinDir\mcp-bassmachine.cmd"
 $Ps1Wrapper = "$BinDir\mcp-bassmachine.ps1"
 
-# .cmd wrapper for CMD & general CLI
+# .cmd wrapper for CMD & general CLI (enables UTF-8 codepage 65001 & virtual terminal processing)
 $CmdContent = @"
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
+chcp 65001 >nul 2>nul
 cd /d "$InstallDir"
 "$LuaPath" src\main.lua %*
 "@
 Set-Content -Path "$CmdWrapper" -Value $CmdContent -Encoding ASCII
 
-# .ps1 wrapper for PowerShell
+# .ps1 wrapper for PowerShell 5.0 through 7+ (forces UTF-8 OutputEncoding & VT ANSI processing)
 $Ps1Content = @"
 Push-Location "$InstallDir"
 try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    `$OutputEncoding = [System.Text.Encoding]::UTF8
+    try {
+        # Enable Virtual Terminal sequences on legacy Windows console hosts
+        `$null = [Console]::CursorVisible
+    } catch {}
     & "$LuaPath" src\main.lua @args
 } finally {
     Pop-Location
