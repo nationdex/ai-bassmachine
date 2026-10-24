@@ -3,6 +3,7 @@
 *.so
 *.dylib
 *.dll
+!bin/windows/*.dll
 .luarocks/
 lua_modules/
 luarocks.lock

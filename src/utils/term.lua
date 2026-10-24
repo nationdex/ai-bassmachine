@@ -52,23 +52,59 @@ end
 
 local is_windows = (package.config:sub(1, 1) == "\\") or (os.getenv("OS") and os.getenv("OS"):match("Windows"))
 
+local win_poll_key = nil
+local win_init = nil
+local win_cleanup = nil
 local win_ffi = nil
 local saved_win_in_mode = nil
 local saved_win_out_mode = nil
 
 if is_windows then
-  local ok, ffi = pcall(require, "ffi")
-  if ok and ffi then
-    pcall(function()
-      ffi.cdef([[
-        int _kbhit(void);
-        int _getch(void);
-        void* GetStdHandle(int nStdHandle);
-        int GetConsoleMode(void* hConsoleHandle, unsigned int* lpMode);
-        int SetConsoleMode(void* hConsoleHandle, unsigned int dwMode);
-      ]])
-      win_ffi = ffi
-    end)
+  -- 1. Try native ultra-low latency Win32 console helper DLL first
+  local script_dir = ""
+  local info = debug.getinfo(1, "S")
+  if info and info.source and info.source:sub(1, 1) == "@" then
+    local src_path = info.source:sub(2)
+    script_dir = src_path:match("(.*[/\\])") or ""
+  end
+
+  local dll_paths = {
+    "bin/windows/bass_wincon64.dll",
+    "bin/windows/bass_wincon32.dll",
+    script_dir .. "../../bin/windows/bass_wincon64.dll",
+    script_dir .. "../../bin/windows/bass_wincon32.dll",
+    script_dir .. "../bin/windows/bass_wincon64.dll",
+    script_dir .. "../bin/windows/bass_wincon32.dll",
+    "bass_wincon64.dll",
+    "bass_wincon32.dll",
+  }
+  for _, path in ipairs(dll_paths) do
+    local p_init = package.loadlib(path, "win_init")
+    local p_poll = package.loadlib(path, "win_poll_key")
+    local p_clean = package.loadlib(path, "win_cleanup")
+    if p_init and p_poll and p_clean then
+      win_init = p_init
+      win_poll_key = p_poll
+      win_cleanup = p_clean
+      break
+    end
+  end
+
+  -- 2. If DLL not found, check for LuaJIT FFI
+  if not win_poll_key then
+    local ok, ffi = pcall(require, "ffi")
+    if ok and ffi then
+      pcall(function()
+        ffi.cdef([[
+          int _kbhit(void);
+          int _getch(void);
+          void* GetStdHandle(int nStdHandle);
+          int GetConsoleMode(void* hConsoleHandle, unsigned int* lpMode);
+          int SetConsoleMode(void* hConsoleHandle, unsigned int dwMode);
+        ]])
+        win_ffi = ffi
+      end)
+    end
   end
 end
 
@@ -180,21 +216,24 @@ end
 local saved_stty = nil
 
 function term.enter_raw_mode()
-  if not is_windows then
-    local f = io.popen("stty -g 2>/dev/null", "r")
-    if f then
-      saved_stty = f:read("*a")
-      f:close()
-      if saved_stty then
-        saved_stty = saved_stty:gsub("%s+", "")
-      end
+  -- Try stty (handles Linux, macOS, and Git Bash / MSYS2 / Mintty on Windows)
+  local f = io.popen("stty -g 2>/dev/null", "r")
+  if f then
+    saved_stty = f:read("*a")
+    f:close()
+    if saved_stty then
+      saved_stty = saved_stty:gsub("%s+", "")
     end
-    os.execute("stty raw -echo min 0 time 0 2>/dev/null")
-  else
+  end
+  os.execute("stty raw -echo min 0 time 0 2>/dev/null || stty raw -echo min 0 time 0 2>nul")
+
+  if is_windows then
     -- On Windows, enable UTF-8 code page (65001) for CMD / PowerShell 5.0 - 7+
     os.execute("chcp 65001 >nul 2>nul")
 
-    if win_ffi then
+    if win_init then
+      pcall(win_init)
+    elseif win_ffi then
       pcall(function()
         local hIn = win_ffi.C.GetStdHandle(-10) -- STD_INPUT_HANDLE
         local hOut = win_ffi.C.GetStdHandle(-11) -- STD_OUTPUT_HANDLE
@@ -251,14 +290,16 @@ function term.exit_raw_mode()
   io.write(term.colors.alt_screen_off)
   io.flush()
 
-  if not is_windows then
-    if saved_stty and #saved_stty > 0 then
-      os.execute("stty " .. saved_stty .. " 2>/dev/null")
-    else
-      os.execute("stty sane 2>/dev/null")
-    end
+  if saved_stty and #saved_stty > 0 then
+    os.execute("stty " .. saved_stty .. " 2>/dev/null || stty " .. saved_stty .. " 2>nul")
   else
-    if win_ffi and saved_win_in_mode then
+    os.execute("stty sane 2>/dev/null || stty sane 2>nul")
+  end
+
+  if is_windows then
+    if win_cleanup then
+      pcall(win_cleanup)
+    elseif win_ffi and saved_win_in_mode then
       pcall(function()
         local hIn = win_ffi.C.GetStdHandle(-10)
         local hOut = win_ffi.C.GetStdHandle(-11)
@@ -443,6 +484,19 @@ function term.read_keys()
   -- Return any keys already queued
   while #input_buffer > 0 do
     table.insert(keys, table.remove(input_buffer, 1))
+  end
+
+  if is_windows and win_poll_key then
+    while true do
+      local k = win_poll_key()
+      if not k then
+        break
+      end
+      table.insert(keys, k)
+    end
+    if #keys > 0 then
+      return keys
+    end
   end
 
   if is_windows then
