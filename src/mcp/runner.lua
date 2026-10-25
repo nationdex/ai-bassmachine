@@ -78,7 +78,58 @@ local function windows_pipe(proc, id, read_timeout_ms)
   return pipe
 end
 
+-- Programs commonly needed by marketplace entries, with where to get them
+local TOOL_HINTS = {
+  npx = "Node.js (https://nodejs.org)",
+  node = "Node.js (https://nodejs.org)",
+  npm = "Node.js (https://nodejs.org)",
+  uvx = "uv (https://docs.astral.sh/uv)",
+  uv = "uv (https://docs.astral.sh/uv)",
+  docker = "Docker (https://docs.docker.com/get-docker)",
+  python = "Python (https://python.org)",
+  python3 = "Python (https://python.org)",
+}
+
+-- First word of a command line, or nil when it is an env-assignment prefix or an explicit path
+local function bare_program(command)
+  local tok = command:match('^%s*"([^"]+)"') or command:match("^%s*'([^']+)'") or command:match("^%s*(%S+)")
+  if not tok or tok:find("[=/\\]") then
+    return nil
+  end
+  return tok
+end
+
+-- true when the program resolves on PATH (where.exe on Windows, command -v elsewhere)
+function McpRunner.program_exists(program)
+  if not program:match("^[%w%._%-]+$") then
+    return true -- unusual name: let the shell decide
+  end
+  if term.is_windows then
+    local pipe = term.safe_popen("where " .. program .. " 2>nul")
+    if not pipe then
+      return true
+    end
+    local out = pipe:read("*a") or ""
+    local _, _, code = pipe:close()
+    if #out:gsub("%s+", "") > 0 then
+      return true
+    end
+    -- where.exe exits 1 for "not found"; any other code means the lookup itself failed (unknown: allow)
+    return type(code) == "number" and code ~= 1
+  end
+  local ok = os.execute("command -v " .. program .. " >/dev/null 2>&1")
+  return ok == true or ok == 0
+end
+
 function McpRunner:start()
+  -- Fail early and readably instead of letting the shell print "'npx' is not recognized" at the TUI
+  local program = bare_program(self.command)
+  if program and not McpRunner.program_exists(program) then
+    local hint = TOOL_HINTS[program]
+    return false,
+      string.format("'%s' not found on PATH%s", program, hint and (" - install " .. hint .. " and reopen the terminal") or "")
+  end
+
   if term.is_windows then
     local proc = term.win_proc
     if not proc then
@@ -105,7 +156,9 @@ function McpRunner:start()
     if not ok then
       local log = self:get_stderr_log()
       self:stop()
-      return false, "Handshake failed: " .. tostring(err) .. (#log > 0 and (" | stderr: " .. log:sub(1, 300)) or "")
+      local detail = tostring(err):gsub("^Handshake failed: ", "")
+      local first_log_line = log:match("[^\r\n]+")
+      return false, "Handshake failed: " .. detail .. (first_log_line and (" | " .. first_log_line:sub(1, 200)) or "")
     end
     return true, self.client
   end
@@ -173,7 +226,7 @@ function McpRunner:start()
   local ok, err = self.client:initialize()
   if not ok then
     self:stop()
-    return false, "Handshake failed: " .. tostring(err)
+    return false, tostring(err)
   end
 
   return true, self.client

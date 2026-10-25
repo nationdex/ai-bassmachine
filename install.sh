@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/nationdex/mcp-bassmachine.git"
+REPO_URL="${MCP_BASSMACHINE_REPO:-https://github.com/nationdex/mcp-bassmachine.git}"
 INSTALL_DIR="${MCP_BASSMACHINE_HOME:-$HOME/.mcp-bassmachine}"
 BIN_DIR="${MCP_BASSMACHINE_BIN:-$HOME/.local/bin}"
 # Pin a release tag for reproducible installs, e.g. MCP_BASSMACHINE_REF=v0.1.0
@@ -67,12 +67,26 @@ mkdir -p "$(dirname "$INSTALL_DIR")"
 
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo -e "Existing installation found at ${INSTALL_DIR}. Updating repository..."
-  # Fast-forward only: never discard local edits (e.g. bassmachine.toml) with a hard reset
+  # Shallow single-commit fetches cannot be fast-forward merged ("unrelated histories"), so move the
+  # checkout with reset --hard. Refuse if tracked files other than bassmachine.toml were edited;
+  # bassmachine.toml (user config) is preserved.
   git -C "$INSTALL_DIR" fetch --depth=1 origin "$REF"
-  if ! git -C "$INSTALL_DIR" merge --ff-only FETCH_HEAD; then
-    echo -e "${RED}Update aborted: local changes in ${INSTALL_DIR} conflict with upstream.${RESET}"
-    echo "Commit or stash them, then re-run the installer."
+  OTHER_CHANGES="$(git -C "$INSTALL_DIR" status --porcelain --untracked-files=no | grep -v 'bassmachine\.toml$' || true)"
+  if [ -n "$OTHER_CHANGES" ]; then
+    echo -e "${RED}Update aborted: local changes in ${INSTALL_DIR} would be overwritten:${RESET}"
+    echo "$OTHER_CHANGES"
+    echo "Commit, stash or revert them, then re-run the installer."
     exit 1
+  fi
+  SAVED_CFG=""
+  if [ -f "$INSTALL_DIR/bassmachine.toml" ] && ! git -C "$INSTALL_DIR" diff --quiet -- bassmachine.toml; then
+    SAVED_CFG="$(mktemp)"
+    cp "$INSTALL_DIR/bassmachine.toml" "$SAVED_CFG"
+  fi
+  git -C "$INSTALL_DIR" reset --hard FETCH_HEAD
+  if [ -n "$SAVED_CFG" ]; then
+    cp "$SAVED_CFG" "$INSTALL_DIR/bassmachine.toml"
+    rm -f "$SAVED_CFG"
   fi
 else
   echo -e "Cloning repository into ${INSTALL_DIR}..."

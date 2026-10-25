@@ -20,7 +20,8 @@ if ($exits.Count -gt 0) { throw 'install.ps1 must not call exit' }
 foreach ($bogus in @('rweichler.lua', 'Lua.Lua', 'Scoop.Scoop')) {
     if ($text -match [regex]::Escape($bogus)) { throw "bogus winget id still referenced: $bogus" }
 }
-if ($text -match 'reset --hard') { throw 'hard reset would discard local edits' }
+if ($text -match 'merge --ff-only') { throw 'ff-only merge fails on shallow checkouts (unrelated histories)' }
+if ($text -notmatch 'FETCH_HEAD') { throw 'update must move the checkout to FETCH_HEAD' }
 
 # 4. Load functions without installing
 $env:MCP_BASSMACHINE_NOEXEC = '1'

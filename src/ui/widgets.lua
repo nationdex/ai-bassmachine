@@ -60,13 +60,17 @@ function widgets.draw_status_bar(engine, message, hotkeys)
     engine.buffer[row][c].bg = bg
   end
 
-  if message and #message > 0 then
-    engine:draw_text(row, 2, message, term.palette.fg_neon_green, bg)
+  local hk_col = width
+  if hotkeys and #hotkeys > 0 then
+    hk_col = math.max(1, width - term.visible_len(hotkeys) - 2)
+    engine:draw_text(row, hk_col, hotkeys, term.palette.fg_muted, bg)
   end
 
-  if hotkeys and #hotkeys > 0 then
-    local hk_col = math.max(1, width - #hotkeys - 2)
-    engine:draw_text(row, hk_col, hotkeys, term.palette.fg_muted, bg)
+  if message and #message > 0 then
+    -- Errors (e.g. captured stderr) may contain newlines/control characters; keep them on one line
+    -- and clip before the hotkey hints so the bar never wraps or overlaps.
+    local one_line = message:gsub("[%c]+", " "):gsub("%s+", " ")
+    engine:draw_text(row, 2, term.truncate(one_line, math.max(1, hk_col - 4)), term.palette.fg_neon_green, bg)
   end
 end
 

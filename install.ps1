@@ -50,6 +50,39 @@ function Invoke-Native {
     }
 }
 
+function Get-NativeOutput {
+    # Captures stdout of a native command (stderr discarded) as a string array.
+    param([Parameter(Mandatory)][string]$File, [string[]]$Arguments = @())
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        return @(& $File @Arguments 2>$null | Where-Object { $_ })
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
+function Update-Checkout([string]$InstallDir, [string]$Ref) {
+    # Shallow single-commit fetches cannot be fast-forward merged ("unrelated histories"), so move the
+    # checkout with reset --hard. Refuse if the user edited tracked files; bassmachine.toml (the
+    # user-editable config) is preserved across the reset.
+    if ((Invoke-Native 'git' @('-C', $InstallDir, 'fetch', '--depth=1', 'origin', $Ref)) -ne 0) {
+        throw 'git fetch failed. Check your network connection and that the ref exists.'
+    }
+    $changed = Get-NativeOutput 'git' @('-C', $InstallDir, 'status', '--porcelain', '--untracked-files=no')
+    $others = @($changed | Where-Object { $_ -notmatch 'bassmachine\.toml\s*$' })
+    if ($others.Count -gt 0) {
+        throw ("Local changes in $InstallDir would be overwritten:`r`n  " + ($others -join "`r`n  ") + "`r`nCommit, stash or revert them and re-run.")
+    }
+    $cfg = Join-Path $InstallDir 'bassmachine.toml'
+    $savedCfg = $null
+    if (@($changed).Count -gt 0 -and (Test-Path $cfg)) { $savedCfg = [IO.File]::ReadAllBytes($cfg) }
+    if ((Invoke-Native 'git' @('-C', $InstallDir, 'reset', '--hard', 'FETCH_HEAD')) -ne 0) {
+        throw 'git reset failed.'
+    }
+    if ($savedCfg) { [IO.File]::WriteAllBytes($cfg, $savedCfg) }
+}
+
 function Get-UserHomeDir {
     if ($env:USERPROFILE) { return $env:USERPROFILE }
     if ($env:HOME) { return $env:HOME }
@@ -201,15 +234,10 @@ function Install-MCPBassMachine {
     }
     Write-Step "Using Lua engine: $LuaPath" 'Green'
 
-    # 3. Clone or fast-forward update (never discards local edits such as bassmachine.toml)
+    # 3. Clone or update (keeps bassmachine.toml, refuses to clobber other local edits)
     if (Test-Path (Join-Path $InstallDir '.git')) {
-        Write-Step "Existing installation found at $InstallDir. Updating..."
-        if ((Invoke-Native 'git' @('-C', $InstallDir, 'fetch', '--depth=1', 'origin', $Ref)) -ne 0) {
-            throw 'git fetch failed. Check your network connection.'
-        }
-        if ((Invoke-Native 'git' @('-C', $InstallDir, 'merge', '--ff-only', 'FETCH_HEAD')) -ne 0) {
-            throw "Update aborted: local changes in $InstallDir conflict with upstream. Commit or stash them and re-run."
-        }
+        Write-Step "Existing installation found at $InstallDir. Updating to $Ref..."
+        Update-Checkout $InstallDir $Ref
     } else {
         Write-Step "Cloning repository into $InstallDir..."
         if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir }
