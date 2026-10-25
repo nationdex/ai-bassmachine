@@ -59,6 +59,7 @@ local win_sleep = nil
 local win_get_window_size = nil
 local win_mkdir_p = nil
 local win_proc = nil
+local win_enable_vt_input = nil
 local win_ffi = nil
 local saved_win_in_mode = nil
 local saved_win_out_mode = nil
@@ -89,12 +90,14 @@ if is_windows then
     local p_sleep = package.loadlib(path, "win_sleep")
     local p_size = package.loadlib(path, "win_get_window_size")
     local p_mkdir = package.loadlib(path, "win_mkdir_p")
+    local p_vt = package.loadlib(path, "win_enable_vt_input")
     local p_spawn = package.loadlib(path, "win_spawn")
     local p_write = package.loadlib(path, "win_write")
     local p_read = package.loadlib(path, "win_read")
     local p_alive = package.loadlib(path, "win_alive")
     local p_kill = package.loadlib(path, "win_kill")
     if p_init and p_poll and p_clean then
+      win_enable_vt_input = p_vt
       if p_spawn and p_write and p_read and p_alive and p_kill then
         win_proc = { spawn = p_spawn, write = p_write, read = p_read, alive = p_alive, kill = p_kill }
       end
@@ -411,6 +414,10 @@ function term.enter_raw_mode()
       if ok and raw == nil then
         win_poll_key = nil
         term.win_api_unresolved = true
+        -- Stdin fallback reader needs arrows as ESC [ A sequences, i.e. VT input mode
+        if win_enable_vt_input then
+          pcall(win_enable_vt_input)
+        end
       end
     elseif win_ffi then
       pcall(function()

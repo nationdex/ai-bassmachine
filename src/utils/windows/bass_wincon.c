@@ -81,12 +81,40 @@ __declspec(dllexport) int win_init(void* L) {
             // Output: ENABLE_PROCESSED_OUTPUT (1) | ENABLE_VIRTUAL_TERMINAL_PROCESSING (4)
             SetConsoleMode(hConsoleOut, orig_out_mode | 0x0005);
             // Input: disable ENABLE_LINE_INPUT (2) | ENABLE_ECHO_INPUT (4) | ENABLE_PROCESSED_INPUT (1)
-            SetConsoleMode(hConsoleIn, (orig_in_mode & ~0x0007));
+            // and ENABLE_VIRTUAL_TERMINAL_INPUT (0x200): with VT input on, arrow keys arrive as
+            // ESC [ A character events instead of VK_UP key events (win_poll_key decodes both anyway).
+            SetConsoleMode(hConsoleIn, (orig_in_mode & ~0x0207));
         }
     }
     if (p_pushinteger) {
         p_pushinteger(L, raw_enabled ? 1 : 0);
         return 1;
+    }
+    return 0;
+}
+
+/*
+ * For Lua builds whose C API the helper cannot resolve (statically linked lua.exe), win_poll_key
+ * cannot return keys. Turning on VT input makes the console feed ESC [ A style sequences through
+ * plain stdin, which the pure-Lua fallback reader already parses.
+ */
+__declspec(dllexport) int win_enable_vt_input(void* L) {
+    (void)L;
+    init_handles();
+    if (hConsoleIn != INVALID_HANDLE_VALUE && hConsoleIn != NULL) {
+        DWORD m = 0;
+        if (GetConsoleMode(hConsoleIn, &m)) {
+            if (!raw_enabled) orig_in_mode = m;
+            SetConsoleMode(hConsoleIn, (m & ~0x0007) | 0x0200);
+            raw_enabled = 1;
+            if (hConsoleOut != INVALID_HANDLE_VALUE && hConsoleOut != NULL) {
+                DWORD om = 0;
+                if (GetConsoleMode(hConsoleOut, &om)) {
+                    orig_out_mode = om;
+                    SetConsoleMode(hConsoleOut, om | 0x0005);
+                }
+            }
+        }
     }
     return 0;
 }
@@ -192,6 +220,38 @@ __declspec(dllexport) int win_poll_key(void* L) {
         if (vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU ||
             vk == VK_CAPITAL || vk == VK_LWIN || vk == VK_RWIN) {
             continue;
+        }
+
+        // 0. VT-encoded input (host left ENABLE_VIRTUAL_TERMINAL_INPUT on): ESC arrives with vk == 0,
+        // followed by '[' or 'O' and the final byte as separate key events.
+        if (ch == 27 && vk == 0) {
+            char seq[16];
+            int n = 0;
+            for (int guard = 0; guard < 16; guard++) {
+                DWORD ne = 0;
+                if (!GetNumberOfConsoleInputEvents(hConsoleIn, &ne) || ne == 0) break;
+                INPUT_RECORD r2;
+                DWORD rc = 0;
+                if (!ReadConsoleInputA(hConsoleIn, &r2, 1, &rc) || rc == 0) break;
+                if (r2.EventType != KEY_EVENT || !r2.Event.KeyEvent.bKeyDown) continue;
+                char c2 = r2.Event.KeyEvent.uChar.AsciiChar;
+                if (!c2) continue;
+                seq[n++] = c2;
+                if (n == 1 && c2 != '[' && c2 != 'O') break;
+                if (n >= 2 && ((c2 >= 'A' && c2 <= 'Z') || (c2 >= 'a' && c2 <= 'z') || c2 == '~')) break;
+            }
+            seq[n] = 0;
+            if (!strcmp(seq, "[A") || !strcmp(seq, "OA")) { p_pushlstring(L, "up", 2); return 1; }
+            if (!strcmp(seq, "[B") || !strcmp(seq, "OB")) { p_pushlstring(L, "down", 4); return 1; }
+            if (!strcmp(seq, "[C") || !strcmp(seq, "OC")) { p_pushlstring(L, "right", 5); return 1; }
+            if (!strcmp(seq, "[D") || !strcmp(seq, "OD")) { p_pushlstring(L, "left", 4); return 1; }
+            if (!strcmp(seq, "[H") || !strcmp(seq, "OH") || !strcmp(seq, "[1~")) { p_pushlstring(L, "home", 4); return 1; }
+            if (!strcmp(seq, "[F") || !strcmp(seq, "OF") || !strcmp(seq, "[4~")) { p_pushlstring(L, "end", 3); return 1; }
+            if (!strcmp(seq, "[5~")) { p_pushlstring(L, "page_up", 7); return 1; }
+            if (!strcmp(seq, "[6~")) { p_pushlstring(L, "page_down", 9); return 1; }
+            if (!strcmp(seq, "[3~")) { p_pushlstring(L, "delete", 6); return 1; }
+            if (n == 0) { p_pushlstring(L, "esc", 3); return 1; }
+            continue; /* unknown sequence: drop it rather than leak "[" and letters as keystrokes */
         }
 
         // 1. Navigation & Special Keys

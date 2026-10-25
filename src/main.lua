@@ -969,6 +969,27 @@ function app.main(args)
     history:clean_all()
     io.write("Ephemeral history cleaned.\n")
     os.exit(0)
+  elseif cmd == "keytest" then
+    -- Keyboard diagnostics: shows which input path is active and echoes keys for 15 seconds
+    io.write(string.format("Lua: %s  windows=%s  mintty=%s\n", _VERSION, tostring(term.is_windows), tostring(term.is_mintty())))
+    term.enter_raw_mode()
+    io.write("\27[?1049l")
+    io.write(string.format(
+      "raw_ok=%s  api_unresolved=%s  native_dll=%s\n",
+      tostring(term.win_raw_ok), tostring(term.win_api_unresolved == true), tostring(term.win_proc ~= nil)
+    ))
+    io.write("Press arrow keys, Home/End, PgUp/PgDn (15s). Raw results:\n")
+    local t_end = os.time() + 15
+    while os.time() < t_end do
+      local keys = term.read_keys()
+      for _, k in ipairs(keys) do
+        io.write("  key: " .. tostring(k) .. "\n")
+      end
+      io.flush()
+      term.sleep(0.03)
+    end
+    term.exit_raw_mode()
+    os.exit(0)
   elseif cmd == "check-config" then
     io.write(string.format("TOML Configuration at %s:\n", config.config_path))
     io.write(string.format("  App: %s\n", config:get("general.app_name")))
