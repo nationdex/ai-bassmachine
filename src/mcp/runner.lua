@@ -41,11 +41,12 @@ local function windows_pipe(proc, id, read_timeout_ms)
     return n ~= nil and self or nil
   end
 
-  function pipe:flush()
+  -- Dot-style definitions: callers use pipe:method() but these do not need the receiver
+  function pipe.flush()
     return true
   end
 
-  function pipe:read(_fmt)
+  function pipe.read(_, _fmt)
     local deadline = os.clock() + read_timeout_ms / 1000
     while true do
       local nl = pending:find("\n", 1, true)
@@ -71,7 +72,7 @@ local function windows_pipe(proc, id, read_timeout_ms)
     end
   end
 
-  function pipe:close()
+  function pipe.close()
     return true
   end
 
@@ -127,7 +128,11 @@ function McpRunner:start()
   if program and not McpRunner.program_exists(program) then
     local hint = TOOL_HINTS[program]
     return false,
-      string.format("'%s' not found on PATH%s", program, hint and (" - install " .. hint .. " and reopen the terminal") or "")
+      string.format(
+        "'%s' not found on PATH%s",
+        program,
+        hint and (" - install " .. hint .. " and reopen the terminal") or ""
+      )
   end
 
   if term.is_windows then

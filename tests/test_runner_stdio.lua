@@ -30,4 +30,6 @@ if term.is_windows then
   assert(not sok and tostring(serr):find("Handshake failed"), "expected handshake failure, got " .. tostring(serr))
 end
 
-io.write("PASS: tests/test_runner_stdio.lua (" .. (term.is_windows and "windows native pipes" or "posix fifos") .. ")\n")
+io.write(
+  "PASS: tests/test_runner_stdio.lua (" .. (term.is_windows and "windows native pipes" or "posix fifos") .. ")\n"
+)
