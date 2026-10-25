@@ -36,6 +36,10 @@ jobs:
           luarocks install luacheck
           luarocks install tl
 
+      - name: Scan for committed secrets
+        run: |
+          bash scripts/secret-scan.sh
+
       - name: Check Formatting (Stylua)
         run: |
           stylua --check src tests
@@ -73,6 +77,8 @@ jobs:
           lua tests/test_history.lua
           lua tests/test_mcp_protocol.lua
           lua tests/test_env_manager.lua
+          lua tests/test_config_secrets.lua
+          lua tests/test_ai_security.lua
 
       - name: Verify CLI Entrypoint
         run: |

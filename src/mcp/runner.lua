@@ -12,7 +12,7 @@ local runner_counter = 0
 function McpRunner.new(command_str, env_vars)
   local self = setmetatable({}, McpRunner)
   runner_counter = runner_counter + 1
-  self.id = tostring(os.time()) .. "_" .. tostring(runner_counter)
+  self.id = tostring(os.time()) .. "_" .. tostring(runner_counter) .. "_" .. term.random_hex(6)
   self.command = command_str
   self.env = env_vars or {}
   local tmp_dir = term.get_temp_dir()
@@ -45,23 +45,36 @@ function McpRunner:start()
   end
 
   -- Unix: Create FIFOs
-  os.execute(string.format("mkfifo %s %s 2>/dev/null", self.fifo_in, self.fifo_out))
+  local q = term.shell_quote
+  os.execute(string.format("mkfifo -m 600 %s %s 2>/dev/null", q(self.fifo_in), q(self.fifo_out)))
 
-  -- Build environment prefix
+  -- Build environment prefix; names must be plain identifiers, values are shell-quoted
   local env_str = ""
   for k, v in pairs(self.env) do
-    env_str = env_str .. string.format('%s="%s" ', k, tostring(v))
+    if type(k) == "string" and k:match("^[A-Za-z_][A-Za-z0-9_]*$") then
+      env_str = env_str .. string.format("%s=%s ", k, q(tostring(v)))
+    end
   end
 
-  -- Spawn background process wrapped in subshell capturing PID
+  -- Pre-create log/pid files with mode 600 (redirects keep existing permissions), so the child's
+  -- own umask is left untouched.
+  for _, path in ipairs({ self.log_file, self.pid_file }) do
+    local pf = term.open_private(path)
+    if pf then
+      pf:close()
+    end
+  end
+
+  -- Spawn background process wrapped in subshell capturing PID.
+  -- self.command is an intentional shell command line (e.g. "npx -y pkg"); only paths/env are escaped.
   local spawn_cmd = string.format(
     "( %s%s < %s > %s 2> %s & echo $! > %s ) 2>/dev/null",
     env_str,
     self.command,
-    self.fifo_in,
-    self.fifo_out,
-    self.log_file,
-    self.pid_file
+    q(self.fifo_in),
+    q(self.fifo_out),
+    q(self.log_file),
+    q(self.pid_file)
   )
 
   self.start_time = os.time()

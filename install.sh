@@ -8,6 +8,8 @@ set -euo pipefail
 REPO_URL="https://github.com/nationdex/mcp-bassmachine.git"
 INSTALL_DIR="${MCP_BASSMACHINE_HOME:-$HOME/.mcp-bassmachine}"
 BIN_DIR="${MCP_BASSMACHINE_BIN:-$HOME/.local/bin}"
+# Pin a release tag for reproducible installs, e.g. MCP_BASSMACHINE_REF=v0.1.0
+REF="${MCP_BASSMACHINE_REF:-main}"
 
 # ANSI Colors
 BOLD="\033[1m"
@@ -65,22 +67,24 @@ mkdir -p "$(dirname "$INSTALL_DIR")"
 
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo -e "Existing installation found at ${INSTALL_DIR}. Updating repository..."
-  git -C "$INSTALL_DIR" fetch --depth=1 origin main
-  git -C "$INSTALL_DIR" reset --hard origin/main
+  # Fast-forward only: never discard local edits (e.g. bassmachine.toml) with a hard reset
+  git -C "$INSTALL_DIR" fetch --depth=1 origin "$REF"
+  if ! git -C "$INSTALL_DIR" merge --ff-only FETCH_HEAD; then
+    echo -e "${RED}Update aborted: local changes in ${INSTALL_DIR} conflict with upstream.${RESET}"
+    echo "Commit or stash them, then re-run the installer."
+    exit 1
+  fi
 else
   echo -e "Cloning repository into ${INSTALL_DIR}..."
   rm -rf "$INSTALL_DIR"
-  git clone --depth=1 "$REPO_URL" "$INSTALL_DIR"
+  git clone --depth=1 --branch "$REF" "$REPO_URL" "$INSTALL_DIR"
 fi
 
 # 3. Create Symlink / Wrapper in BIN_DIR
 mkdir -p "$BIN_DIR"
 WRAPPER_PATH="$BIN_DIR/mcp-bassmachine"
 
-cat << EOF > "$WRAPPER_PATH"
-#!/usr/bin/env bash
-exec "$INSTALL_DIR/bin/mcp-bassmachine" "\$@"
-EOF
+printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$INSTALL_DIR/bin/mcp-bassmachine" > "$WRAPPER_PATH"
 
 chmod +x "$WRAPPER_PATH"
 chmod +x "$INSTALL_DIR/bin/mcp-bassmachine"

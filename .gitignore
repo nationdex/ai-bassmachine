@@ -24,3 +24,15 @@ Thumbs.db
 
 # Testing
 tests/tmp/
+
+# Secrets (never commit credentials; use ${ENV_VAR} placeholders in bassmachine.toml)
+.env
+.env.*
+*.key
+*.pem
+bassmachine.local.toml
+mcp_bass_*
+
+# Stray directories created by mis-quoted shell commands
+/-
+/-p

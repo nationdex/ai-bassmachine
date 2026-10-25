@@ -138,6 +138,13 @@ default_model = "anthropic/claude-3.5-sonnet"
 
 | Key | Action |
 |---|---|
+### API key safety
+
+- Keys live in environment variables (`ZENMUX_API_KEY`, `OPENAI_API_KEY`, ...). `bassmachine.toml` keeps only `${ENV_VAR}` placeholders; `save()` never writes a resolved key and rewrites any literal key back to a placeholder.
+- Requests go through a private (mode 600) curl config file, so keys never appear in `ps` output or URLs.
+- Enable the secret-scan pre-commit hook once per clone: `git config core.hooksPath .githooks`. CI runs `scripts/secret-scan.sh` too.
+- Pin installs with `MCP_BASSMACHINE_REF=<tag> curl ... | bash`.
+
 | `1` - `6` | Switch active tab (Marketplaces, Test & Run, AI Synth, History, Settings, Agent Sync) |
 | `Tab` | Cycle next tab |
 | `↑` / `↓` | Navigate list items and menu options |

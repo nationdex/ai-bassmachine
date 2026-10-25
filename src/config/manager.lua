@@ -2,6 +2,7 @@
 -- Loads, merges environment variables, provides runtime edits, and saves back to TOML.
 
 local toml = require("mcp-bassmachine.config.toml")
+local term = require("mcp-bassmachine.utils.term")
 
 local ConfigManager = {}
 ConfigManager.__index = ConfigManager
@@ -113,61 +114,80 @@ local function expand_env_vars(tbl)
   end
 end
 
+-- Provider id -> environment variable holding its API key
+local PROVIDER_ENV_KEYS = {
+  zenmux = "ZENMUX_API_KEY",
+  anthropic = "ANTHROPIC_API_KEY",
+  gemini = "GEMINI_API_KEY",
+  openai = "OPENAI_API_KEY",
+  openrouter = "OPENROUTER_API_KEY",
+  deepseek = "DEEPSEEK_API_KEY",
+}
+
+-- Values that are safe to persist in bassmachine.toml (empty, ${VAR} placeholder, ollama's dummy key)
+local function is_safe_key_value(v)
+  return type(v) ~= "string" or v == "" or v == "ollama" or v:match("^%${[A-Za-z0-9_]+}$") ~= nil
+end
+
 function ConfigManager.new(config_path)
   local self = setmetatable({}, ConfigManager)
   self.config_path = config_path or "bassmachine.toml"
+  -- raw = what gets written to disk (env placeholders intact); data = runtime view with secrets resolved
+  self.raw = deep_copy(DEFAULT_CONFIG)
   self.data = deep_copy(DEFAULT_CONFIG)
   self:load()
   return self
 end
 
 function ConfigManager:load()
+  self.raw = deep_copy(DEFAULT_CONFIG)
   local f = io.open(self.config_path, "r")
   if f then
     local content = f:read("*a")
     f:close()
     local parsed = toml.parse(content)
     if parsed and type(parsed) == "table" then
-      deep_merge(self.data, parsed)
+      deep_merge(self.raw, parsed)
     end
   end
+
+  self.data = deep_copy(self.raw)
   expand_env_vars(self.data)
 
-  -- Check direct environment variable overrides
-  local zm_key = os.getenv("ZENMUX_API_KEY")
-  if zm_key and #zm_key > 0 then
-    self.data.providers.zenmux.api_key = zm_key
-  end
-  local ant_key = os.getenv("ANTHROPIC_API_KEY")
-  if ant_key and #ant_key > 0 then
-    self.data.providers.anthropic.api_key = ant_key
-  end
-  local gem_key = os.getenv("GEMINI_API_KEY")
-  if gem_key and #gem_key > 0 then
-    self.data.providers.gemini.api_key = gem_key
-  end
-  local oai_key = os.getenv("OPENAI_API_KEY")
-  if oai_key and #oai_key > 0 then
-    self.data.providers.openai.api_key = oai_key
-  end
-  local or_key = os.getenv("OPENROUTER_API_KEY")
-  if or_key and #or_key > 0 then
-    self.data.providers.openrouter.api_key = or_key
-  end
-  local ds_key = os.getenv("DEEPSEEK_API_KEY")
-  if ds_key and #ds_key > 0 then
-    self.data.providers.deepseek.api_key = ds_key
+  -- Environment variables always win at runtime, but never touch self.raw
+  for provider_id, env_name in pairs(PROVIDER_ENV_KEYS) do
+    local env_val = os.getenv(env_name)
+    if env_val and #env_val > 0 and self.data.providers[provider_id] then
+      self.data.providers[provider_id].api_key = env_val
+    end
   end
 end
 
+-- Persist configuration. API keys are never written as literals: anything that is not a
+-- ${ENV_VAR} placeholder is replaced with the provider's placeholder before encoding.
 function ConfigManager:save()
-  local raw_toml = toml.encode(self.data)
+  local scrubbed = {}
+  for provider_id, prov in pairs(self.raw.providers or {}) do
+    if type(prov) == "table" and not is_safe_key_value(prov.api_key) then
+      local env_name = PROVIDER_ENV_KEYS[provider_id] or (provider_id:upper():gsub("[^A-Z0-9]", "_") .. "_API_KEY")
+      prov.api_key = "${" .. env_name .. "}"
+      table.insert(scrubbed, provider_id)
+    end
+  end
+
+  local raw_toml = toml.encode(self.raw)
   local f = io.open(self.config_path, "w")
   if not f then
     return false, "Could not open " .. self.config_path .. " for writing"
   end
   f:write(raw_toml)
   f:close()
+  term.chmod_private(self.config_path)
+
+  if #scrubbed > 0 then
+    table.sort(scrubbed)
+    return true, "Literal API key replaced by env placeholder for: " .. table.concat(scrubbed, ", ")
+  end
   return true
 end
 
@@ -185,6 +205,18 @@ function ConfigManager:get(path_str, default_val)
   return cur
 end
 
+local function set_path(root, parts, value)
+  local cur = root
+  for i = 1, #parts - 1 do
+    local p = parts[i]
+    if not cur[p] or type(cur[p]) ~= "table" then
+      cur[p] = {}
+    end
+    cur = cur[p]
+  end
+  cur[parts[#parts]] = value
+end
+
 function ConfigManager:set(path_str, value)
   local parts = {}
   for part in path_str:gmatch("[^%.]+") do
@@ -194,15 +226,8 @@ function ConfigManager:set(path_str, value)
     return
   end
 
-  local cur = self.data
-  for i = 1, #parts - 1 do
-    local p = parts[i]
-    if not cur[p] or type(cur[p]) ~= "table" then
-      cur[p] = {}
-    end
-    cur = cur[p]
-  end
-  cur[parts[#parts]] = value
+  set_path(self.data, parts, value)
+  set_path(self.raw, parts, value)
 end
 
 return ConfigManager

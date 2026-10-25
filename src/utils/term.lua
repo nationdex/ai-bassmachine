@@ -164,6 +164,79 @@ function term.safe_popen(cmd)
   end
 end
 
+-- POSIX single-quote escaping for interpolating untrusted text into a shell command
+function term.shell_quote(s)
+  return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+end
+
+-- Unpredictable hex token for temp file names (falls back to math.random without /dev/urandom)
+function term.random_hex(nbytes)
+  nbytes = nbytes or 8
+  if not is_windows then
+    local f = io.open("/dev/urandom", "rb")
+    if f then
+      local raw = f:read(nbytes)
+      f:close()
+      if raw and #raw == nbytes then
+        return (raw:gsub(".", function(c)
+          return string.format("%02x", c:byte())
+        end))
+      end
+    end
+  end
+  -- Seed once: re-seeding per call yields identical tokens within the same clock tick (seen on Windows)
+  if not term._seeded then
+    local addr = tonumber((tostring({}):match("0x(%x+)") or "0"), 16) or 0
+    math.randomseed(os.time() + math.floor(os.clock() * 1e6) + addr)
+    term._seeded = true
+  end
+  local out = {}
+  for _ = 1, nbytes do
+    out[#out + 1] = string.format("%02x", math.random(0, 255))
+  end
+  return table.concat(out)
+end
+
+-- Create/truncate a file readable only by the current user (mode 600) and return it opened for writing
+function term.open_private(path)
+  if not is_windows then
+    if path:find("[%c']") then
+      return nil
+    end
+    os.execute(string.format("umask 077; : > '%s' 2>/dev/null", path))
+  end
+  return io.open(path, "w")
+end
+
+-- Restrict an existing file to the current user (no-op on Windows, where ACLs default to the user profile)
+function term.chmod_private(path)
+  if is_windows or not path or path:find("[%c']") then
+    return
+  end
+  os.execute(string.format("chmod 600 '%s' 2>/dev/null", path))
+end
+
+-- Replace every occurrence of each secret in text with ***
+function term.redact(text, secrets)
+  text = tostring(text or "")
+  for _, secret in ipairs(secrets or {}) do
+    if type(secret) == "string" and #secret >= 6 then
+      local out, pos = {}, 1
+      while true do
+        local s, e = text:find(secret, pos, true)
+        if not s then
+          out[#out + 1] = text:sub(pos)
+          break
+        end
+        out[#out + 1] = text:sub(pos, s - 1) .. "***"
+        pos = e + 1
+      end
+      text = table.concat(out)
+    end
+  end
+  return text
+end
+
 function term.mkdir_p(dir)
   if not dir or #dir == 0 then
     return true
@@ -180,7 +253,7 @@ function term.mkdir_p(dir)
     local cmd = string.format('cmd.exe /c "if not exist \\"%s\\" mkdir \\"%s\\"" 2>nul', win_dir, win_dir)
     return os.execute(cmd)
   else
-    return os.execute(string.format("mkdir -p '%s' 2>/dev/null", dir))
+    return os.execute(string.format("mkdir -p %s 2>/dev/null", term.shell_quote(dir)))
   end
 end
 

@@ -2,6 +2,7 @@
 -- Tracks MCP sessions without permanent installation. Cleanable on-demand or automatically.
 
 local json = require("mcp-bassmachine.utils.json")
+local term = require("mcp-bassmachine.utils.term")
 
 local HistoryManager = {}
 HistoryManager.__index = HistoryManager
@@ -44,6 +45,7 @@ function HistoryManager:save()
   end
   f:write(json.encode(self.entries))
   f:close()
+  term.chmod_private(self.filepath)
   return true
 end
 
