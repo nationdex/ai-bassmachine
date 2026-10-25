@@ -3,6 +3,7 @@
 
 local toml = require("mcp-bassmachine.config.toml")
 local term = require("mcp-bassmachine.utils.term")
+local Secrets = require("mcp-bassmachine.config.secrets")
 
 local ConfigManager = {}
 ConfigManager.__index = ConfigManager
@@ -141,7 +142,10 @@ end
 
 function ConfigManager:load()
   self.raw = deep_copy(DEFAULT_CONFIG)
+  self.notices = {}
+  self.key_sources = {}
   local f = io.open(self.config_path, "r")
+  local file_existed = f ~= nil
   if f then
     local content = f:read("*a")
     f:close()
@@ -151,16 +155,99 @@ function ConfigManager:load()
     end
   end
 
-  self.data = deep_copy(self.raw)
-  expand_env_vars(self.data)
-
-  -- Environment variables always win at runtime, but never touch self.raw
-  for provider_id, env_name in pairs(PROVIDER_ENV_KEYS) do
-    local env_val = os.getenv(env_name)
-    if env_val and #env_val > 0 and self.data.providers[provider_id] then
-      self.data.providers[provider_id].api_key = env_val
+  -- A literal key in the TOML is a leak (older versions wrote resolved keys back to this tracked file).
+  -- Drop it instead of using it, and tell the user to rotate it and enter a fresh one in Settings.
+  local scrubbed = {}
+  for provider_id, prov in pairs(self.raw.providers or {}) do
+    if type(prov) == "table" and not is_safe_key_value(prov.api_key) then
+      prov.api_key = "${" .. (PROVIDER_ENV_KEYS[provider_id] or (provider_id:upper():gsub("[^A-Z0-9]", "_") .. "_API_KEY")) .. "}"
+      table.insert(scrubbed, provider_id)
     end
   end
+  if #scrubbed > 0 then
+    table.sort(scrubbed)
+    table.insert(
+      self.notices,
+      "Removed plaintext API key from bassmachine.toml ("
+        .. table.concat(scrubbed, ", ")
+        .. "). Rotate it and set a new one in Settings."
+    )
+    if file_existed then
+      self:save()
+    end
+  end
+
+  self.data = deep_copy(self.raw)
+  expand_env_vars(self.data)
+  self:apply_keys()
+end
+
+-- Resolve provider keys: environment variable > secrets file > (placeholder -> empty)
+function ConfigManager:apply_keys()
+  for provider_id, env_name in pairs(PROVIDER_ENV_KEYS) do
+    local prov = self.data.providers[provider_id]
+    local raw_prov = self.raw.providers[provider_id]
+    if prov and raw_prov then
+      -- Always derive from the raw (placeholder) value so a cleared key cannot linger in memory
+      local base = raw_prov.api_key
+      local env_val = os.getenv(env_name)
+      local file_val = Secrets.get(provider_id)
+      if env_val and #env_val > 0 then
+        prov.api_key = env_val
+        self.key_sources[provider_id] = "env"
+      elseif file_val then
+        prov.api_key = file_val
+        self.key_sources[provider_id] = "file"
+      else
+        prov.api_key = (type(base) == "string" and not base:match("^%${[A-Za-z0-9_]+}$")) and base or ""
+        self.key_sources[provider_id] = "none"
+      end
+    end
+  end
+end
+
+-- Providers that take an API key (everything except local ollama)
+function ConfigManager.key_providers()
+  local ids = {}
+  for id in pairs(PROVIDER_ENV_KEYS) do
+    table.insert(ids, id)
+  end
+  table.sort(ids)
+  return ids
+end
+
+function ConfigManager:key_source(provider_id)
+  return self.key_sources[provider_id] or "none"
+end
+
+function ConfigManager:masked_api_key(provider_id)
+  local prov = self.data.providers[provider_id]
+  return Secrets.mask(prov and prov.api_key or "")
+end
+
+-- Store a key in the user-only secrets file. Returns ok, err_or_note.
+function ConfigManager:set_api_key(provider_id, key)
+  if not PROVIDER_ENV_KEYS[provider_id] then
+    return false, "Provider '" .. tostring(provider_id) .. "' does not use an API key"
+  end
+  local ok, err = Secrets.set(provider_id, key)
+  if not ok then
+    return false, err
+  end
+  self:apply_keys()
+  if self.key_sources[provider_id] == "env" then
+    return true, PROVIDER_ENV_KEYS[provider_id] .. " is set and overrides the stored key; unset it to use this one"
+  end
+  return true
+end
+
+function ConfigManager:clear_api_key(provider_id)
+  local ok, err = Secrets.delete(provider_id)
+  if not ok then
+    return false, err
+  end
+  self:apply_keys()
+  return true
 end
 
 -- Persist configuration. API keys are never written as literals: anything that is not a

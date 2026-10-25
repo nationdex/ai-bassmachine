@@ -166,7 +166,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     pricing_filter = "All",
     ai_prompt = "Hello! Test MCP tool integration with deepseek/deepseek-v4.1-flash",
     ai_response = nil,
-    status_msg = win_warning or "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
+    status_msg = win_warning or (config.notices and config.notices[1]) or "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
     active_runner = nil,
     modal = nil,
   }
@@ -213,7 +213,14 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           state.modal.selected_idx or 1
         )
       else
-        widgets.draw_modal_input(engine, state.modal.title, state.modal.prompt, state.modal.value, #state.modal.value)
+        widgets.draw_modal_input(
+          engine,
+          state.modal.title,
+          state.modal.prompt,
+          state.modal.value,
+          #state.modal.value,
+          state.modal.masked
+        )
       end
     end
 
@@ -320,6 +327,22 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               config:set(s.key, val)
               state.status_msg = string.format("Set %s to '%s' (Press [S] to save)", s.label, val)
             end
+          elseif m.type == "set_api_key" then
+            -- The key itself never goes into status text, history or the TOML
+            if #m.value == 0 then
+              local ok_clear, clear_err = config:clear_api_key(m.provider)
+              state.status_msg = ok_clear and ("Removed stored API key for " .. m.provider)
+                or ("Could not remove key: " .. tostring(clear_err))
+            else
+              local ok_set, set_note = config:set_api_key(m.provider, m.value)
+              if ok_set then
+                state.status_msg = "Saved API key for " .. m.provider .. " (" .. config:masked_api_key(m.provider) .. ")"
+                  .. (set_note and (" - " .. set_note) or "")
+              else
+                state.status_msg = "Key not saved: " .. tostring(set_note)
+              end
+            end
+            m.value = ""
           elseif m.type == "search_marketplace" then
             state.search_query = m.value
             state.selected_mcp_idx = 1
@@ -751,6 +774,20 @@ function app.run_tui(config, history, registry, ai, env_mgr)
                 items = provider_options,
                 selected_idx = init_idx,
               }
+            elseif s.type == "api_key" then
+              local cur_prov = config:get("ai.default_provider", "zenmux")
+              if cur_prov == "ollama" then
+                state.status_msg = "Ollama runs locally and needs no API key."
+              else
+                state.modal = {
+                  type = "set_api_key",
+                  title = "API Key: " .. cur_prov:upper(),
+                  prompt = "Paste new key (hidden). Empty + Enter removes it:",
+                  value = "",
+                  masked = true,
+                  provider = cur_prov,
+                }
+              end
             elseif s.type == "model_choice" then
               local cur_prov = config:get("ai.default_provider", "zenmux")
               state.status_msg = "Fetching models for " .. cur_prov:upper() .. "..."
@@ -992,6 +1029,25 @@ function app.main(args)
     end
     term.exit_raw_mode()
     os.exit(0)
+  elseif cmd == "keys" then
+    io.write("API keys (env var > secrets file > unset):\n")
+    for _, pid in ipairs(ConfigManager.key_providers()) do
+      io.write(string.format("  %-11s %-10s %s\n", pid, config:key_source(pid), config:masked_api_key(pid)))
+    end
+    io.write("Secrets file: " .. require("mcp-bassmachine.config.secrets").path() .. "\n")
+    for _, n in ipairs(config.notices or {}) do
+      io.write("NOTE: " .. n .. "\n")
+    end
+    os.exit(0)
+  elseif cmd == "clear-key" then
+    local pid = args[2]
+    if not pid then
+      io.write("Usage: mcp-bassmachine clear-key <provider>\n")
+      os.exit(1)
+    end
+    local ok_c, err_c = config:clear_api_key(pid)
+    io.write(ok_c and ("Removed stored key for " .. pid .. "\n") or ("Failed: " .. tostring(err_c) .. "\n"))
+    os.exit(ok_c and 0 or 1)
   elseif cmd == "check-config" then
     io.write(string.format("TOML Configuration at %s:\n", config.config_path))
     io.write(string.format("  App: %s\n", config:get("general.app_name")))

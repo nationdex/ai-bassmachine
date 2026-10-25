@@ -84,6 +84,8 @@ jobs:
           lua tests/test_tui_enter_controls.lua
           lua tests/test_runner_stdio.lua
           lua tests/test_runner_preflight.lua
+          lua tests/test_secrets.lua
+          lua tests/test_tui_api_key.lua
 
       - name: Verify CLI Entrypoint
         run: |
@@ -121,7 +123,7 @@ jobs:
 
       - name: Run Windows test suite
         run: |
-          foreach ($t in 'test_json','test_toml','test_history','test_mcp_protocol','test_env_manager','test_config_secrets','test_ai_security','test_term_keys','test_runner_stdio','test_runner_preflight') {
+          foreach ($t in 'test_json','test_toml','test_history','test_mcp_protocol','test_env_manager','test_config_secrets','test_ai_security','test_term_keys','test_runner_stdio','test_runner_preflight','test_secrets','test_tui_api_key') {
             & $env:LUA_EXE "tests/$t.lua"
             if ($LASTEXITCODE -ne 0) { throw "$t failed" }
           }

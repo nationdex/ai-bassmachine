@@ -108,7 +108,7 @@ function widgets.draw_list(engine, items, selected_idx, top_row, left_col, heigh
   end
 end
 
-function widgets.draw_modal_input(engine, title, prompt, value, cursor_pos)
+function widgets.draw_modal_input(engine, title, prompt, value, cursor_pos, masked)
   local box_w = math.min(70, engine.cols - 4)
   local box_h = 7
   local top_r = math.floor((engine.rows - box_h) / 2)
@@ -123,6 +123,9 @@ function widgets.draw_modal_input(engine, title, prompt, value, cursor_pos)
 
   local input_w = box_w - 6
   local display_val = value or ""
+  if masked then
+    display_val = string.rep("*", #display_val)
+  end
   local truncated_val = term.truncate(display_val, input_w - 2)
 
   -- Input box field background

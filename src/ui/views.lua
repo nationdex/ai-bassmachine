@@ -382,6 +382,7 @@ function views.render_settings(engine, config, state)
     { key = "ui.bass_meter", label = "Bass Meter Animation", type = "boolean" },
     { key = "ai.default_provider", label = "Active AI Service", type = "provider_choice" },
     { key = "ai.default_model", label = "Active AI Model", type = "model_choice" },
+    { key = "providers.api_key", label = "API Key (active service)", type = "api_key" },
     { key = "ai.temperature", label = "Sampling Temperature", type = "number" },
     { key = "ai.max_tokens", label = "Max Tokens", type = "number" },
     { key = "ai.request_timeout_seconds", label = "Timeout Seconds", type = "number" },
@@ -395,8 +396,12 @@ function views.render_settings(engine, config, state)
     local is_sel = (idx == sel_idx)
     local cur_val = config:get(s.key)
     local val_str = tostring(cur_val)
-    if type(cur_val) == "string" and cur_val:match("^sk%-") then
-      val_str = cur_val:sub(1, 10) .. "..." .. cur_val:sub(-6)
+    if s.type == "api_key" then
+      -- Never render a stored key in full: masked value plus where it comes from
+      local pid = config:get("ai.default_provider", "zenmux")
+      local src = config:key_source(pid)
+      local src_label = ({ env = "env var", file = "secrets file", none = "not set" })[src] or src
+      val_str = pid == "ollama" and "(no key needed)" or (config:masked_api_key(pid) .. "  [" .. src_label .. "]")
     end
 
     local fg = is_sel and (term.palette.fg_cyan .. term.colors.bold) or term.palette.fg_primary
@@ -411,7 +416,7 @@ function views.render_settings(engine, config, state)
     engine:draw_text(
       3 + main_h,
       4,
-      term.truncate("Press [Enter]/[E] Edit Value │ [Space] Toggle Bool │ [S] Save TOML", width - 8),
+      term.truncate("Press [Enter]/[E] Edit Value │ [Space] Toggle Bool │ [S] Save TOML │ API Key row: [Enter] set, empty = remove", width - 8),
       term.palette.fg_cyan .. term.colors.bold
     )
   end

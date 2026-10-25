@@ -138,6 +138,14 @@ default_model = "anthropic/claude-3.5-sonnet"
 
 ---
 
+### Setting or changing an API key
+
+- **In the TUI:** Settings (tab 5) -> pick the AI service, then the **API Key** row -> `Enter`, paste the key (it is hidden while typing). Empty + `Enter` removes it. The row shows only a masked value and where it came from.
+- **Where it is stored:** `~/.config/mcp-bassmachine/secrets.json` (`%USERPROFILE%\.config\mcp-bassmachine\secrets.json` on Windows), outside the project folder, mode 600 on Linux/macOS. On Windows it relies on your user profile's permissions, not encryption.
+- **Precedence:** environment variable (`ZENMUX_API_KEY`, ...) > secrets file. The TUI tells you when an env var is overriding a stored key.
+- **CLI:** `mcp-bassmachine keys` lists each provider's source and masked key; `mcp-bassmachine clear-key <provider>` removes a stored key.
+- **Rotating a leaked key:** revoke it at the provider, remove any old `ZENMUX_API_KEY` environment variable, then set the new one as above. A plaintext key found in `bassmachine.toml` (older versions wrote it there) is removed automatically on startup.
+
 ### API key safety
 
 - Keys live in environment variables (`ZENMUX_API_KEY`, `OPENAI_API_KEY`, ...). `bassmachine.toml` keeps only `${ENV_VAR}` placeholders; `save()` never writes a resolved key and rewrites any literal key back to a placeholder.
