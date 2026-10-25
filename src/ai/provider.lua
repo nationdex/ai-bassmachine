@@ -252,8 +252,11 @@ function AiProvider:chat_completion(messages, options)
 
   if not api_key or #api_key == 0 then
     return nil,
-      "Missing API key for '" .. tostring(prov_id) .. "'. Set it in Settings (tab 5) or export "
-        .. tostring(prov_id):upper() .. "_API_KEY"
+      "Missing API key for '"
+        .. tostring(prov_id)
+        .. "'. Set it in Settings (tab 5) or export "
+        .. tostring(prov_id):upper()
+        .. "_API_KEY"
   end
 
   if not valid_base_url(base_url) then

@@ -1,3 +1,4 @@
+-- luacheck: ignore 122
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
@@ -78,7 +79,9 @@ assert(not bad_ok, "invalid key accepted")
 -- 5. legacy plaintext key in TOML (written by old versions) is dropped, reported and scrubbed on disk
 local legacy_path = tmp(".legacy.toml")
 local lf = assert(io.open(legacy_path, "w"))
-lf:write('[providers.openrouter]\nname = "OpenRouter"\nbase_url = "https://openrouter.ai/api/v1"\napi_key = "sk-or-LEAKED-legacy-key-777777"\n')
+lf:write(
+  '[providers.openrouter]\nname = "OpenRouter"\nbase_url = "https://openrouter.ai/api/v1"\napi_key = "sk-or-LEAKED-legacy-key-777777"\n'
+)
 lf:close()
 Secrets.delete("openrouter")
 local legacy = ConfigManager.new(legacy_path)

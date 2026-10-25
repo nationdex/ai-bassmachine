@@ -166,7 +166,9 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     pricing_filter = "All",
     ai_prompt = "Hello! Test MCP tool integration with deepseek/deepseek-v4.1-flash",
     ai_response = nil,
-    status_msg = win_warning or (config.notices and config.notices[1]) or "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
+    status_msg = win_warning
+      or (config.notices and config.notices[1])
+      or "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
     active_runner = nil,
     modal = nil,
   }
@@ -336,7 +338,11 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             else
               local ok_set, set_note = config:set_api_key(m.provider, m.value)
               if ok_set then
-                state.status_msg = "Saved API key for " .. m.provider .. " (" .. config:masked_api_key(m.provider) .. ")"
+                state.status_msg = "Saved API key for "
+                  .. m.provider
+                  .. " ("
+                  .. config:masked_api_key(m.provider)
+                  .. ")"
                   .. (set_note and (" - " .. set_note) or "")
               else
                 state.status_msg = "Key not saved: " .. tostring(set_note)

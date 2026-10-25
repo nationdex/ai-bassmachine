@@ -416,7 +416,10 @@ function views.render_settings(engine, config, state)
     engine:draw_text(
       3 + main_h,
       4,
-      term.truncate("Press [Enter]/[E] Edit Value │ [Space] Toggle Bool │ [S] Save TOML │ API Key row: [Enter] set, empty = remove", width - 8),
+      term.truncate(
+        "Press [Enter]/[E] Edit Value │ [Space] Toggle Bool │ [S] Save TOML │ API Key row: [Enter] set, empty = remove",
+        width - 8
+      ),
       term.palette.fg_cyan .. term.colors.bold
     )
   end

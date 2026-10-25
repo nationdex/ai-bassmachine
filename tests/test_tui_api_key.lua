@@ -1,3 +1,4 @@
+-- luacheck: ignore 122
 -- Renders the Settings tab and the key modal with a fake key; the full key must never reach the screen.
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
@@ -6,7 +7,6 @@ local ConfigManager = require("mcp-bassmachine.config.manager")
 local views = require("mcp-bassmachine.ui.views")
 local Engine = require("mcp-bassmachine.ui.engine")
 local widgets = require("mcp-bassmachine.ui.widgets")
-local term = require("mcp-bassmachine.utils.term")
 
 local KEY = "sk-FAKE-screen-key-QWERTY998877"
 local secrets_path = os.tmpname()

@@ -160,7 +160,9 @@ function ConfigManager:load()
   local scrubbed = {}
   for provider_id, prov in pairs(self.raw.providers or {}) do
     if type(prov) == "table" and not is_safe_key_value(prov.api_key) then
-      prov.api_key = "${" .. (PROVIDER_ENV_KEYS[provider_id] or (provider_id:upper():gsub("[^A-Z0-9]", "_") .. "_API_KEY")) .. "}"
+      prov.api_key = "${"
+        .. (PROVIDER_ENV_KEYS[provider_id] or (provider_id:upper():gsub("[^A-Z0-9]", "_") .. "_API_KEY"))
+        .. "}"
       table.insert(scrubbed, provider_id)
     end
   end
