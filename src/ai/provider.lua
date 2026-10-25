@@ -2,6 +2,7 @@
 -- Bridges MCP tools with ZenMux, Anthropic, Gemini, OpenAI, OpenRouter, DeepSeek, and Ollama.
 
 local json = require("mcp-bassmachine.utils.json")
+local term = require("mcp-bassmachine.utils.term")
 
 local AiProvider = {}
 AiProvider.__index = AiProvider
@@ -92,7 +93,7 @@ function AiProvider:fetch_available_models(provider_name)
 
   if endpoint then
     local curl_cmd = string.format("curl -s -m 5 %s '%s' 2>/dev/null", headers, endpoint)
-    local pipe = io.popen(curl_cmd, "r")
+    local pipe = term.safe_popen(curl_cmd)
     if pipe then
       local resp = pipe:read("*a")
       pipe:close()
@@ -204,7 +205,8 @@ function AiProvider:chat_completion(messages, options)
   local json_payload = json.encode(payload)
 
   -- Write payload to temporary file to avoid shell escaping issues
-  local tmp_payload = string.format("/tmp/mcp_bass_ai_req_%d_%d.json", os.time(), math.random(1000, 9999))
+  local tmp_dir = term.get_temp_dir()
+  local tmp_payload = string.format("%s/mcp_bass_ai_req_%d_%d.json", tmp_dir, os.time(), math.random(1000, 9999))
   local pf = io.open(tmp_payload, "w")
   if not pf then
     return nil, "Could not write temporary request payload"
@@ -288,7 +290,7 @@ function AiProvider:chat_completion(messages, options)
     )
   end
 
-  local pipe = io.popen(curl_cmd, "r")
+  local pipe = term.safe_popen(curl_cmd)
   if not pipe then
     os.remove(tmp_payload)
     return nil, "Failed to spawn curl process"

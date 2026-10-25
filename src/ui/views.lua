@@ -377,16 +377,14 @@ function views.render_settings(engine, config, state)
     { key = "general.auto_clean_history", label = "Auto Clean History", type = "boolean" },
     { key = "general.max_history_entries", label = "Max History Entries", type = "number" },
     { key = "general.history_retention_hours", label = "History Retention (h)", type = "number" },
+    { key = "ui.theme", label = "Color Theme", type = "string" },
     { key = "ui.frame_rate", label = "TUI Target FPS", type = "number" },
     { key = "ui.bass_meter", label = "Bass Meter Animation", type = "boolean" },
-    { key = "ai.default_provider", label = "Default AI Service", type = "provider_choice" },
-    { key = "ai.default_model", label = "Default AI Model", type = "model_choice" },
-    { key = "providers.zenmux.default_model", label = "ZenMux Model", type = "string" },
-    { key = "providers.openrouter.default_model", label = "OpenRouter Model", type = "string" },
-    { key = "providers.openai.default_model", label = "OpenAI Model", type = "string" },
-    { key = "providers.anthropic.default_model", label = "Anthropic Model", type = "string" },
-    { key = "providers.gemini.default_model", label = "Gemini Model", type = "string" },
-    { key = "providers.ollama.default_model", label = "Ollama Model", type = "string" },
+    { key = "ai.default_provider", label = "Active AI Service", type = "provider_choice" },
+    { key = "ai.default_model", label = "Active AI Model", type = "model_choice" },
+    { key = "ai.temperature", label = "Sampling Temperature", type = "number" },
+    { key = "ai.max_tokens", label = "Max Tokens", type = "number" },
+    { key = "ai.request_timeout_seconds", label = "Timeout Seconds", type = "number" },
   }
 
   state.settings_keys = settings_keys

@@ -22,6 +22,7 @@ end
 -- Wong2 Awesome-MCP, and Appcypher Awesome-MCP registries.
 
 local json = require("mcp-bassmachine.utils.json")
+local term = require("mcp-bassmachine.utils.term")
 
 local Registry = {}
 Registry.__index = Registry
@@ -385,7 +386,7 @@ end
 -- 1. Official MCP Registry (JSON API)
 function Registry.fetch_official_registry()
   local cmd = "curl -s -m 6 'https://registry.modelcontextprotocol.io/v0.1/servers' 2>/dev/null"
-  local f = io.popen(cmd, "r")
+  local f = term.safe_popen(cmd)
   if not f then
     return {}
   end
@@ -455,7 +456,7 @@ end
 -- 2. Punkpeye Awesome-MCP Registry
 function Registry.fetch_punkpeye_mcp()
   local cmd = "curl -s -m 8 'https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md' 2>/dev/null"
-  local f = io.popen(cmd, "r")
+  local f = term.safe_popen(cmd)
   if not f then
     return {}
   end
@@ -523,7 +524,7 @@ end
 -- 3. Wong2 Awesome-MCP Registry
 function Registry.fetch_wong2_mcp()
   local cmd = "curl -s -m 8 'https://raw.githubusercontent.com/wong2/awesome-mcp-servers/main/README.md' 2>/dev/null"
-  local f = io.popen(cmd, "r")
+  local f = term.safe_popen(cmd)
   if not f then
     return {}
   end
@@ -586,7 +587,7 @@ end
 function Registry.fetch_appcypher_mcp()
   local cmd =
     "curl -s -m 8 'https://raw.githubusercontent.com/appcypher/awesome-mcp-servers/main/README.md' 2>/dev/null"
-  local f = io.popen(cmd, "r")
+  local f = term.safe_popen(cmd)
   if not f then
     return {}
   end

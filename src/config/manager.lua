@@ -34,43 +34,36 @@ local DEFAULT_CONFIG = {
       name = "ZenMux AI",
       base_url = "https://zenmux.ai/api/v1",
       api_key = "",
-      default_model = "deepseek/deepseek-v4.1-flash",
     },
     anthropic = {
       name = "Anthropic Claude",
       base_url = "https://api.anthropic.com/v1",
       api_key = "",
-      default_model = "claude-3-5-sonnet-20241022",
     },
     gemini = {
       name = "Google Gemini",
       base_url = "https://generativelanguage.googleapis.com/v1beta",
       api_key = "",
-      default_model = "gemini-2.0-flash",
     },
     openai = {
       name = "OpenAI",
       base_url = "https://api.openai.com/v1",
       api_key = "",
-      default_model = "gpt-4o",
     },
     openrouter = {
       name = "OpenRouter",
       base_url = "https://openrouter.ai/api/v1",
       api_key = "",
-      default_model = "anthropic/claude-3.5-sonnet",
     },
     deepseek = {
       name = "DeepSeek Native",
       base_url = "https://api.deepseek.com/v1",
       api_key = "",
-      default_model = "deepseek-chat",
     },
     ollama = {
       name = "Ollama Local",
       base_url = "http://localhost:11434/v1",
       api_key = "ollama",
-      default_model = "llama3:latest",
     },
   },
   marketplaces = {

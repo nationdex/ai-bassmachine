@@ -135,6 +135,35 @@ local size_poll_interval = 0.5 -- Only query size every 500ms maximum to prevent
 
 term.is_windows = is_windows
 
+-- Cross-platform temporary directory resolution
+function term.get_temp_dir()
+  if is_windows then
+    local t = os.getenv("TEMP") or os.getenv("TMP")
+    if t and #t > 0 then
+      return t:gsub("\\", "/")
+    end
+    return "."
+  else
+    return "/tmp"
+  end
+end
+
+-- Cross-platform safe process pipe reader
+function term.safe_popen(cmd)
+  if is_windows then
+    -- Convert Unix single-quotes to Windows cmd double-quotes
+    local win_cmd = cmd:gsub("'([^']*)'", '"%1"')
+    -- Convert Unix /dev/null redirection to Windows nul
+    win_cmd = win_cmd:gsub("2>/dev/null", "2>nul")
+    win_cmd = win_cmd:gsub("2> /dev/null", "2>nul")
+    win_cmd = win_cmd:gsub(">/dev/null", ">nul")
+    win_cmd = win_cmd:gsub("> /dev/null", ">nul")
+    return io.popen("cmd.exe /c " .. win_cmd, "r")
+  else
+    return io.popen(cmd, "r")
+  end
+end
+
 function term.mkdir_p(dir)
   if not dir or #dir == 0 then
     return true
