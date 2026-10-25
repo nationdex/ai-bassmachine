@@ -173,6 +173,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
 
   local running = true
   local idle_counter = 0
+  local last_frame_sleep = 0.070
 
   while running do
     local cur_r, cur_c = term.get_window_size()
@@ -243,7 +244,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     widgets.draw_status_bar(engine, state.status_msg, hotkeys)
 
     -- Update visualizer & render frame
-    engine:update_bass_animation()
+    engine:update_bass_animation(last_frame_sleep)
     engine:render()
 
     -- Process all buffered input keys immediately to prevent SSH lag and delayed scrolling
@@ -259,6 +260,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     end
     local throttle_sleep = (idle_counter > 4) and 0.070 or 0.015
     term.sleep(throttle_sleep)
+    last_frame_sleep = throttle_sleep
     for _, key in ipairs(keys) do
       -- If inside a modal input or selection dialog, capture keys
       if state.modal then

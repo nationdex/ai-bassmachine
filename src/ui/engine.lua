@@ -160,8 +160,10 @@ function Engine:draw_box(row, col, height, width, fg, bg, title)
   end
 end
 
-function Engine:update_bass_animation()
-  self.bass_phase = self.bass_phase + 0.2
+-- dt = seconds the previous frame slept. The animation runs at 0.2 phase per 70ms (idle frame), so
+-- fast frames while keys are pressed advance proportionally less instead of speeding the meter up.
+function Engine:update_bass_animation(dt)
+  self.bass_phase = self.bass_phase + 0.2 * ((dt or 0.070) / 0.070)
   for i = 1, #self.bass_bars do
     local val = math.floor(4.5 + 3.5 * math.sin(self.bass_phase * (i * 0.45)))
     if val < 1 then
