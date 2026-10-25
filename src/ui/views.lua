@@ -236,16 +236,26 @@ function views.render_ai_synth(engine, config, state)
     width - 4,
     term.palette.border,
     term.palette.bg_dark,
-    "AI Tool Synthesis (ZenMux / OpenRouter / DeepSeek)"
+    "AI Tool Synthesis (OpenCode-Style Hybrid Engine)"
   )
 
   local r = 6
   local prov = config:get("ai.default_provider", "zenmux")
   local model = config:get("ai.default_model", "deepseek/deepseek-v4.1-flash")
 
-  engine:draw_text(r, 4, "Active AI Provider:  " .. prov:upper(), term.palette.fg_cyan .. term.colors.bold)
+  engine:draw_text(
+    r,
+    4,
+    "API Service: " .. prov:upper() .. "  [Press 'P' to switch service]",
+    term.palette.fg_cyan .. term.colors.bold
+  )
   r = r + 1
-  engine:draw_text(r, 4, "Configured Model:    " .. model, term.palette.fg_purple)
+  engine:draw_text(
+    r,
+    4,
+    "AI Model:    " .. model .. "  [Press 'M' to pick dynamically fetched model]",
+    term.palette.fg_purple .. term.colors.bold
+  )
   r = r + 2
 
   engine:draw_text(r, 4, "Prompt Input (Press [E] to edit prompt):", term.palette.fg_primary .. term.colors.bold)
@@ -267,7 +277,12 @@ function views.render_ai_synth(engine, config, state)
       end
     end
   else
-    engine:draw_text(r, 6, "(Press [Enter] to run synthesis query, [E] to change prompt text)", term.palette.fg_muted)
+    engine:draw_text(
+      r,
+      6,
+      "(Press [Enter] to run synthesis query, [P] switch API service, [M] choose model, [E] edit prompt)",
+      term.palette.fg_muted
+    )
   end
 end
 
@@ -364,11 +379,14 @@ function views.render_settings(engine, config, state)
     { key = "general.history_retention_hours", label = "History Retention (h)", type = "number" },
     { key = "ui.frame_rate", label = "TUI Target FPS", type = "number" },
     { key = "ui.bass_meter", label = "Bass Meter Animation", type = "boolean" },
-    { key = "ai.default_provider", label = "Default AI Provider", type = "string" },
-    { key = "ai.default_model", label = "Default AI Model", type = "string" },
-    { key = "ai.providers.zenmux.api_key", label = "ZenMux API Key", type = "string" },
-    { key = "ai.providers.zenmux.default_model", label = "ZenMux Model", type = "string" },
-    { key = "ai.providers.openrouter.default_model", label = "OpenRouter Model", type = "string" },
+    { key = "ai.default_provider", label = "Default AI Service", type = "provider_choice" },
+    { key = "ai.default_model", label = "Default AI Model", type = "model_choice" },
+    { key = "providers.zenmux.default_model", label = "ZenMux Model", type = "string" },
+    { key = "providers.openrouter.default_model", label = "OpenRouter Model", type = "string" },
+    { key = "providers.openai.default_model", label = "OpenAI Model", type = "string" },
+    { key = "providers.anthropic.default_model", label = "Anthropic Model", type = "string" },
+    { key = "providers.gemini.default_model", label = "Gemini Model", type = "string" },
+    { key = "providers.ollama.default_model", label = "Ollama Model", type = "string" },
   }
 
   state.settings_keys = settings_keys

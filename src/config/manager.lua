@@ -36,6 +36,24 @@ local DEFAULT_CONFIG = {
       api_key = "",
       default_model = "deepseek/deepseek-v4.1-flash",
     },
+    anthropic = {
+      name = "Anthropic Claude",
+      base_url = "https://api.anthropic.com/v1",
+      api_key = "",
+      default_model = "claude-3-5-sonnet-20241022",
+    },
+    gemini = {
+      name = "Google Gemini",
+      base_url = "https://generativelanguage.googleapis.com/v1beta",
+      api_key = "",
+      default_model = "gemini-2.0-flash",
+    },
+    openai = {
+      name = "OpenAI",
+      base_url = "https://api.openai.com/v1",
+      api_key = "",
+      default_model = "gpt-4o",
+    },
     openrouter = {
       name = "OpenRouter",
       base_url = "https://openrouter.ai/api/v1",
@@ -126,6 +144,18 @@ function ConfigManager:load()
   local zm_key = os.getenv("ZENMUX_API_KEY")
   if zm_key and #zm_key > 0 then
     self.data.providers.zenmux.api_key = zm_key
+  end
+  local ant_key = os.getenv("ANTHROPIC_API_KEY")
+  if ant_key and #ant_key > 0 then
+    self.data.providers.anthropic.api_key = ant_key
+  end
+  local gem_key = os.getenv("GEMINI_API_KEY")
+  if gem_key and #gem_key > 0 then
+    self.data.providers.gemini.api_key = gem_key
+  end
+  local oai_key = os.getenv("OPENAI_API_KEY")
+  if oai_key and #oai_key > 0 then
+    self.data.providers.openai.api_key = oai_key
   end
   local or_key = os.getenv("OPENROUTER_API_KEY")
   if or_key and #or_key > 0 then

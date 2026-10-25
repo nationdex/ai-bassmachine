@@ -29,6 +29,24 @@ base_url = "https://zenmux.ai/api/v1"
 api_key = "${ZENMUX_API_KEY}"
 default_model = "deepseek/deepseek-v4.1-flash"
 
+[providers.anthropic]
+name = "Anthropic Claude"
+base_url = "https://api.anthropic.com/v1"
+api_key = "${ANTHROPIC_API_KEY}"
+default_model = "claude-3-5-sonnet-20241022"
+
+[providers.gemini]
+name = "Google Gemini"
+base_url = "https://generativelanguage.googleapis.com/v1beta"
+api_key = "${GEMINI_API_KEY}"
+default_model = "gemini-2.0-flash"
+
+[providers.openai]
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+api_key = "${OPENAI_API_KEY}"
+default_model = "gpt-4o"
+
 [providers.openrouter]
 name = "OpenRouter"
 base_url = "https://openrouter.ai/api/v1"

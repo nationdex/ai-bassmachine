@@ -62,19 +62,21 @@ function app.run_cli_test(config, history, ai)
     return false
   end
 
-  -- 4. Test AI Integration (ZenMux with deepseek/deepseek-v4.1-flash)
-  io.write("[4/4] Testing ZenMux AI & deepseek/deepseek-v4.1-flash: ")
-  local resp, err = ai:chat_completion({
-    { role = "user", content = "Ping from MCP Bass Machine preflight" },
-  }, {
-    provider = "zenmux",
-    model = "deepseek/deepseek-v4.1-flash",
-  })
-
-  if resp and resp.content then
-    io.write('\27[1;32mOK\27[0m (Synthesis response received: "' .. resp.content:gsub("\n", " ") .. '")\n')
+  -- 4. Test AI Integration (Dynamic Model & Provider Configuration)
+  io.write("[4/4] Testing AI Provider & Model Subsystem: ")
+  local cur_prov = config:get("ai.default_provider", "zenmux")
+  local models = ai:fetch_available_models(cur_prov)
+  if #models > 0 then
+    io.write(
+      string.format(
+        "\27[1;32mOK\27[0m (Service: %s | %d models dynamically indexed | Active: %s)\n",
+        cur_prov:upper(),
+        #models,
+        default_model
+      )
+    )
   else
-    io.write("\27[1;31mFAILED\27[0m (" .. tostring(err) .. ")\n")
+    io.write("\27[1;31mFAILED\27[0m (No models available for provider)\n")
     return false
   end
 
@@ -186,7 +188,17 @@ function app.run_tui(config, history, registry, ai, env_mgr)
 
     -- 4. Draw Modal Overlay if active
     if state.modal then
-      widgets.draw_modal_input(engine, state.modal.title, state.modal.prompt, state.modal.value, #state.modal.value)
+      if state.modal.is_select then
+        widgets.draw_modal_select(
+          engine,
+          state.modal.title,
+          state.modal.prompt,
+          state.modal.items or {},
+          state.modal.selected_idx or 1
+        )
+      else
+        widgets.draw_modal_input(engine, state.modal.title, state.modal.prompt, state.modal.value, #state.modal.value)
+      end
     end
 
     -- 5. Draw Status Bar
@@ -196,7 +208,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     elseif active_tab_idx == 2 then
       hotkeys = "[X] Call Tool │ [R] Spawn Runner │ [K] Stop Runner"
     elseif active_tab_idx == 3 then
-      hotkeys = "[Enter] Synthesize │ [E] Edit Prompt"
+      hotkeys = "[Enter] Synthesize │ [P] Service │ [M] Model │ [E] Prompt"
     elseif active_tab_idx == 4 then
       hotkeys = "[C] Clean All │ [X] Purge >24h"
     elseif active_tab_idx == 5 then
@@ -206,7 +218,11 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     end
 
     if state.modal then
-      hotkeys = "[Enter] Confirm │ [Esc] Cancel │ [Backspace] Edit"
+      if state.modal.is_select then
+        hotkeys = "[↑/↓] Navigate │ [Enter] Select │ [Esc] Cancel"
+      else
+        hotkeys = "[Enter] Confirm │ [Esc] Cancel │ [Backspace] Edit"
+      end
     end
 
     widgets.draw_status_bar(engine, state.status_msg, hotkeys)
@@ -229,9 +245,41 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     local throttle_sleep = (idle_counter > 4) and 0.070 or 0.015
     term.sleep(throttle_sleep)
     for _, key in ipairs(keys) do
-      -- If inside a modal input dialog, capture text entry
+      -- If inside a modal input or selection dialog, capture keys
       if state.modal then
-        if key == "esc" or key == "double_esc" or key == "ctrl_c" then
+        if state.modal.is_select then
+          local items = state.modal.items or {}
+          if key == "esc" or key == "double_esc" or key == "ctrl_c" then
+            state.modal = nil
+            state.status_msg = "Selection cancelled."
+          elseif key == "up" then
+            state.modal.selected_idx = math.max(1, (state.modal.selected_idx or 1) - 1)
+          elseif key == "down" then
+            state.modal.selected_idx = math.min(#items, (state.modal.selected_idx or 1) + 1)
+          elseif key == "enter" then
+            local sel_item = items[state.modal.selected_idx or 1]
+            local m = state.modal
+            if m.type == "select_provider" and sel_item then
+              config:set("ai.default_provider", sel_item.id)
+              -- Update default model to this provider's default model
+              local p_def = config:get("providers." .. sel_item.id .. ".default_model")
+              if p_def then
+                config:set("ai.default_model", p_def)
+              end
+              config:save()
+              state.status_msg =
+                string.format("Switched AI Service to %s (Model: %s)", sel_item.name, p_def or "default")
+            elseif m.type == "select_model" and sel_item then
+              local model_id = type(sel_item) == "table" and (sel_item.id or sel_item.name) or tostring(sel_item)
+              config:set("ai.default_model", model_id)
+              local cur_p = config:get("ai.default_provider", "zenmux")
+              config:set("providers." .. cur_p .. ".default_model", model_id)
+              config:save()
+              state.status_msg = string.format("Active AI model set to: %s", model_id)
+            end
+            state.modal = nil
+          end
+        elseif key == "esc" or key == "double_esc" or key == "ctrl_c" then
           state.modal = nil
           state.status_msg = "Editing cancelled."
         elseif key == "enter" then
@@ -564,6 +612,55 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               end
             end
           end
+        elseif (key == "p" or key == "P") and active_tab_idx == 3 then
+          -- Open dynamic provider switcher
+          local provider_options = {
+            { id = "zenmux", name = "ZenMux AI", desc = "Multi-model gateway" },
+            { id = "openrouter", name = "OpenRouter", desc = "Unified API" },
+            { id = "anthropic", name = "Anthropic Claude", desc = "Native Anthropic API" },
+            { id = "gemini", name = "Google Gemini", desc = "Native Google Gemini API" },
+            { id = "openai", name = "OpenAI", desc = "Native OpenAI API" },
+            { id = "deepseek", name = "DeepSeek Native", desc = "Native DeepSeek API" },
+            { id = "ollama", name = "Ollama Local", desc = "Local self-hosted models" },
+          }
+          local cur_prov = config:get("ai.default_provider", "zenmux")
+          local init_idx = 1
+          for idx, opt in ipairs(provider_options) do
+            if opt.id == cur_prov then
+              init_idx = idx
+              break
+            end
+          end
+          state.modal = {
+            type = "select_provider",
+            is_select = true,
+            title = "Select AI Service / Provider",
+            prompt = "Choose active API service (Hybrid TOML):",
+            items = provider_options,
+            selected_idx = init_idx,
+          }
+        elseif (key == "m" or key == "M") and active_tab_idx == 3 then
+          -- Dynamically fetch available models for active provider
+          local cur_prov = config:get("ai.default_provider", "zenmux")
+          state.status_msg = "Fetching available models for " .. cur_prov:upper() .. "..."
+          engine:render()
+          local avail_models = ai:fetch_available_models(cur_prov)
+          local cur_m = config:get("ai.default_model", "deepseek/deepseek-v4.1-flash")
+          local init_idx = 1
+          for idx, m_name in ipairs(avail_models) do
+            if m_name == cur_m then
+              init_idx = idx
+              break
+            end
+          end
+          state.modal = {
+            type = "select_model",
+            is_select = true,
+            title = "Dynamic Model Selector (" .. cur_prov:upper() .. ")",
+            prompt = "Choose model from available options:",
+            items = avail_models,
+            selected_idx = init_idx,
+          }
         elseif (key == "e" or key == "E") and active_tab_idx == 3 then
           state.modal = {
             type = "edit_prompt",
@@ -588,6 +685,53 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               config:set(s.key, not cur)
               config:save()
               state.status_msg = "Updated " .. s.label .. " to " .. tostring(not cur)
+            elseif s.type == "provider_choice" then
+              local provider_options = {
+                { id = "zenmux", name = "ZenMux AI", desc = "Multi-model gateway" },
+                { id = "openrouter", name = "OpenRouter", desc = "Unified API" },
+                { id = "anthropic", name = "Anthropic Claude", desc = "Native Anthropic API" },
+                { id = "gemini", name = "Google Gemini", desc = "Native Google Gemini API" },
+                { id = "openai", name = "OpenAI", desc = "Native OpenAI API" },
+                { id = "deepseek", name = "DeepSeek Native", desc = "Native DeepSeek API" },
+                { id = "ollama", name = "Ollama Local", desc = "Local self-hosted models" },
+              }
+              local cur_prov = config:get(s.key, "zenmux")
+              local init_idx = 1
+              for idx, opt in ipairs(provider_options) do
+                if opt.id == cur_prov then
+                  init_idx = idx
+                  break
+                end
+              end
+              state.modal = {
+                type = "select_provider",
+                is_select = true,
+                title = "Choose AI API Service",
+                prompt = "Select provider for TOML configuration:",
+                items = provider_options,
+                selected_idx = init_idx,
+              }
+            elseif s.type == "model_choice" then
+              local cur_prov = config:get("ai.default_provider", "zenmux")
+              state.status_msg = "Fetching models for " .. cur_prov:upper() .. "..."
+              engine:render()
+              local avail_models = ai:fetch_available_models(cur_prov)
+              local cur_m = config:get(s.key, "deepseek/deepseek-v4.1-flash")
+              local init_idx = 1
+              for idx, m_name in ipairs(avail_models) do
+                if m_name == cur_m then
+                  init_idx = idx
+                  break
+                end
+              end
+              state.modal = {
+                type = "select_model",
+                is_select = true,
+                title = "Dynamic Model Selector (" .. cur_prov:upper() .. ")",
+                prompt = "Choose model from available options:",
+                items = avail_models,
+                selected_idx = init_idx,
+              }
             else
               local cur_val = config:get(s.key)
               state.modal = {

@@ -143,4 +143,54 @@ function widgets.draw_modal_input(engine, title, prompt, value, cursor_pos)
   engine:draw_text(top_r + 5, left_c + 3, term.truncate(hint, box_w - 6), term.palette.fg_muted, bg)
 end
 
+function widgets.draw_modal_select(engine, title, prompt, items, selected_idx)
+  local box_w = math.min(76, engine.cols - 4)
+  local max_visible = 8
+  local box_h = math.min(#items + 6, max_visible + 6)
+  local top_r = math.floor((engine.rows - box_h) / 2)
+  local left_c = math.floor((engine.cols - box_w) / 2)
+
+  local bg = term.palette.bg_card
+  local fg_border = term.palette.border_focus
+
+  engine:draw_box(top_r, left_c, box_h, box_w, fg_border, bg, title)
+  engine:draw_text(top_r + 1, left_c + 3, prompt, term.palette.fg_cyan .. term.colors.bold, bg)
+
+  selected_idx = selected_idx or 1
+  if selected_idx > #items then
+    selected_idx = #items
+  end
+  if selected_idx < 1 then
+    selected_idx = 1
+  end
+
+  local scroll_offset = 0
+  if selected_idx > max_visible then
+    scroll_offset = selected_idx - max_visible
+  end
+
+  local list_r = top_r + 3
+  for i = 1, math.min(#items - scroll_offset, max_visible) do
+    local idx = i + scroll_offset
+    local itm = items[idx]
+    local is_sel = (idx == selected_idx)
+    local prefix = is_sel and "► " or "  "
+    local line_text = prefix .. (type(itm) == "table" and (itm.name or itm.label or itm.id) or tostring(itm))
+
+    local fg = is_sel and (term.palette.fg_neon_green .. term.colors.bold) or term.palette.fg_primary
+    local item_bg = is_sel and term.palette.bg_highlight or bg
+
+    for c = left_c + 2, left_c + box_w - 3 do
+      engine.buffer[list_r][c].char = " "
+      engine.buffer[list_r][c].bg = item_bg
+    end
+
+    engine:draw_text(list_r, left_c + 3, term.truncate(line_text, box_w - 6), fg, item_bg)
+    list_r = list_r + 1
+  end
+
+  local hint = "[↑/↓] Select │ [Enter] Choose │ [Esc] Cancel"
+  engine:draw_text(top_r + box_h - 1, left_c + 3, term.truncate(hint, box_w - 6), term.palette.fg_muted, bg)
+end
+
 return widgets
