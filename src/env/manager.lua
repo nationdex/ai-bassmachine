@@ -12,25 +12,7 @@ local term = require("mcp-bassmachine.utils.term")
 local EnvManager = {}
 EnvManager.__index = EnvManager
 
-local function get_home_dir()
-  local home = os.getenv("HOME")
-  if not home or #home == 0 then
-    local userprofile = os.getenv("USERPROFILE")
-    if userprofile and #userprofile > 0 then
-      home = userprofile
-    else
-      local homedrive = os.getenv("HOMEDRIVE") or ""
-      local homepath = os.getenv("HOMEPATH") or ""
-      if #homedrive > 0 and #homepath > 0 then
-        home = homedrive .. homepath
-      else
-        home = "."
-      end
-    end
-  end
-  local clean = home:gsub("\\", "/")
-  return clean
-end
+local get_home_dir = term.get_home_dir
 
 local function build_target_agents()
   local home = get_home_dir()

@@ -58,6 +58,7 @@ local win_cleanup = nil
 local win_sleep = nil
 local win_get_window_size = nil
 local win_mkdir_p = nil
+local win_proc = nil
 local win_ffi = nil
 local saved_win_in_mode = nil
 local saved_win_out_mode = nil
@@ -88,7 +89,15 @@ if is_windows then
     local p_sleep = package.loadlib(path, "win_sleep")
     local p_size = package.loadlib(path, "win_get_window_size")
     local p_mkdir = package.loadlib(path, "win_mkdir_p")
+    local p_spawn = package.loadlib(path, "win_spawn")
+    local p_write = package.loadlib(path, "win_write")
+    local p_read = package.loadlib(path, "win_read")
+    local p_alive = package.loadlib(path, "win_alive")
+    local p_kill = package.loadlib(path, "win_kill")
     if p_init and p_poll and p_clean then
+      if p_spawn and p_write and p_read and p_alive and p_kill then
+        win_proc = { spawn = p_spawn, write = p_write, read = p_read, alive = p_alive, kill = p_kill }
+      end
       win_init = p_init
       win_poll_key = p_poll
       win_cleanup = p_clean
@@ -135,12 +144,52 @@ local size_poll_interval = 0.5 -- Only query size every 500ms maximum to prevent
 
 term.is_windows = is_windows
 
+-- Native Win32 process API (bidirectional pipes + tree kill); nil when the helper DLL is unavailable
+term.win_proc = win_proc
+
+-- Git Bash / MSYS2 / Cygwin terminals (mintty) expose stdin as a pipe, not a Win32 console,
+-- so raw key input cannot work there; callers should tell the user to use winpty/Windows Terminal.
+function term.is_mintty()
+  if not is_windows then
+    return false
+  end
+  local term_prog = os.getenv("TERM_PROGRAM") or ""
+  return os.getenv("MSYSTEM") ~= nil and (term_prog == "mintty" or (os.getenv("TERM") or ""):match("^xterm") ~= nil)
+    and os.getenv("WT_SESSION") == nil
+end
+
+-- Result of the last native raw-mode setup: true = console in raw VT mode, false/nil = no usable console
+term.win_raw_ok = nil
+
+-- Home directory with forward slashes. On Windows USERPROFILE wins: Git Bash exports HOME as an
+-- MSYS path (/c/Users/me) that native Windows APIs cannot open.
+function term.get_home_dir()
+  local home = nil
+  if is_windows then
+    home = os.getenv("USERPROFILE")
+  end
+  if not home or #home == 0 then
+    home = os.getenv("HOME")
+  end
+  if not home or #home == 0 then
+    local homedrive = os.getenv("HOMEDRIVE") or ""
+    local homepath = os.getenv("HOMEPATH") or ""
+    if #homedrive > 0 and #homepath > 0 then
+      home = homedrive .. homepath
+    else
+      home = "."
+    end
+  end
+  return (home:gsub("\\", "/"))
+end
+
 -- Cross-platform temporary directory resolution
 function term.get_temp_dir()
   if is_windows then
     local t = os.getenv("TEMP") or os.getenv("TMP")
     if t and #t > 0 then
-      return t:gsub("\\", "/")
+      t = t:gsub("\\", "/"):gsub("/+$", "")
+      return t
     end
     return "."
   else
@@ -355,7 +404,14 @@ local saved_stty = nil
 function term.enter_raw_mode()
   if is_windows then
     if win_init then
-      pcall(win_init)
+      local ok, raw = pcall(win_init)
+      -- win_init returns 1/0; nothing at all means the helper could not resolve the Lua C API
+      -- (statically linked Lua), in which case win_poll_key can never deliver keys.
+      term.win_raw_ok = ok and raw == 1
+      if ok and raw == nil then
+        win_poll_key = nil
+        term.win_api_unresolved = true
+      end
     elseif win_ffi then
       pcall(function()
         local hIn = win_ffi.C.GetStdHandle(-10) -- STD_INPUT_HANDLE

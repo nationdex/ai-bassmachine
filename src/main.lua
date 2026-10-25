@@ -136,6 +136,21 @@ end
 function app.run_tui(config, history, registry, ai, env_mgr)
   term.enter_raw_mode()
 
+  -- Windows console diagnostics: tell the user why keys may not work instead of hanging silently
+  local win_warning = nil
+  if term.is_windows then
+    if term.is_mintty() and term.win_raw_ok ~= true then
+      term.exit_raw_mode()
+      io.write("Git Bash/mintty does not expose a Windows console, so keyboard input cannot work here.\n")
+      io.write("Run from Windows Terminal, PowerShell or cmd.exe, or prefix the command with winpty.\n")
+      return
+    elseif term.win_api_unresolved then
+      win_warning = "Key input degraded: this Lua build hides its C API. Install LuaBinaries/DEVCOM Lua (DLL build)."
+    elseif term.win_raw_ok == false then
+      win_warning = "No Windows console detected: keyboard input may be limited."
+    end
+  end
+
   local engine = Engine.new(config:get("ui.frame_rate", 30))
   local tabs = { "Marketplaces", "Test & Run", "AI Synth", "History", "Settings", "Agent Sync" }
   local active_tab_idx = 1
@@ -151,7 +166,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     pricing_filter = "All",
     ai_prompt = "Hello! Test MCP tool integration with deepseek/deepseek-v4.1-flash",
     ai_response = nil,
-    status_msg = "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
+    status_msg = win_warning or "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
     active_runner = nil,
     modal = nil,
   }
@@ -586,7 +601,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             type = "spawn_runner",
             title = "Spawn Ephemeral Runner",
             prompt = "Command to run (zero install):",
-            value = "npx -y @modelcontextprotocol/server-filesystem /tmp",
+            value = "npx -y @modelcontextprotocol/server-filesystem " .. term.get_temp_dir(),
           }
         elseif (key == "k" or key == "K") and active_tab_idx == 2 then
           if state.active_runner then

@@ -5,6 +5,7 @@
  */
 
 #include <windows.h>
+#include <string.h>
 
 typedef void (*push_int_fn)(void* L, long long n);
 typedef void (*push_lstring_fn)(void* L, const char* s, size_t len);
@@ -230,4 +231,222 @@ __declspec(dllexport) int win_poll_key(void* L) {
             return 1;
         }
     }
+}
+
+
+/*
+ * Bidirectional child process support (Lua's io.popen is one-way on Windows, which made MCP
+ * stdio servers impossible to drive). Each child gets stdin/stdout anonymous pipes, stderr goes
+ * to a log file, and the whole process tree is bound to a job object so win_kill reaps npx/node
+ * grandchildren too.
+ */
+#define MAX_PROCS 8
+
+typedef struct {
+    int used;
+    HANDLE hProcess;
+    HANDLE hJob;
+    HANDLE hStdinWrite;
+    HANDLE hStdoutRead;
+    DWORD pid;
+} ProcSlot;
+
+static ProcSlot procs[MAX_PROCS];
+
+static void close_slot(ProcSlot* ps) {
+    if (ps->hStdinWrite) CloseHandle(ps->hStdinWrite);
+    if (ps->hStdoutRead) CloseHandle(ps->hStdoutRead);
+    if (ps->hJob) {
+        TerminateJobObject(ps->hJob, 1);
+        CloseHandle(ps->hJob);
+    } else if (ps->hProcess) {
+        TerminateProcess(ps->hProcess, 1);
+    }
+    if (ps->hProcess) CloseHandle(ps->hProcess);
+    memset(ps, 0, sizeof(*ps));
+}
+
+static ProcSlot* get_slot(void* L, int idx) {
+    int isnum = 0;
+    long long id = p_tointeger ? p_tointeger(L, idx, &isnum) : 0;
+    if (id < 1 || id > MAX_PROCS || !procs[id - 1].used) return NULL;
+    return &procs[id - 1];
+}
+
+/* win_spawn(cmdline, stderr_log_path) -> id, pid  (nothing on failure) */
+__declspec(dllexport) int win_spawn(void* L) {
+    init_lua_api();
+    if (!p_tolstring || !p_pushinteger) return 0;
+    size_t clen = 0, plen = 0;
+    const char* cmd = p_tolstring(L, 1, &clen);
+    const char* errpath = p_tolstring(L, 2, &plen);
+    if (!cmd || clen == 0 || clen > 32000) return 0;
+
+    int slot = -1;
+    for (int i = 0; i < MAX_PROCS; i++) {
+        if (!procs[i].used) { slot = i; break; }
+    }
+    if (slot < 0) return 0;
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE inRead = NULL, inWrite = NULL, outRead = NULL, outWrite = NULL, errH = NULL;
+    if (!CreatePipe(&inRead, &inWrite, &sa, 0)) return 0;
+    if (!CreatePipe(&outRead, &outWrite, &sa, 0)) {
+        CloseHandle(inRead); CloseHandle(inWrite);
+        return 0;
+    }
+    /* Parent's ends must not leak into the child */
+    SetHandleInformation(inWrite, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(outRead, HANDLE_FLAG_INHERIT, 0);
+
+    if (errpath && plen > 0) {
+        errH = CreateFileA(errpath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    }
+    if (!errH || errH == INVALID_HANDLE_VALUE) {
+        errH = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+    }
+
+    STARTUPINFOA si;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = inRead;
+    si.hStdOutput = outWrite;
+    si.hStdError = errH;
+
+    char* mutable_cmd = (char*)HeapAlloc(GetProcessHeap(), 0, clen + 1);
+    if (!mutable_cmd) {
+        CloseHandle(inRead); CloseHandle(inWrite); CloseHandle(outRead); CloseHandle(outWrite);
+        if (errH != INVALID_HANDLE_VALUE) CloseHandle(errH);
+        return 0;
+    }
+    memcpy(mutable_cmd, cmd, clen);
+    mutable_cmd[clen] = 0;
+
+    PROCESS_INFORMATION pi;
+    memset(&pi, 0, sizeof(pi));
+    BOOL ok = CreateProcessA(NULL, mutable_cmd, NULL, NULL, TRUE,
+                             CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_BREAKAWAY_FROM_JOB,
+                             NULL, NULL, &si, &pi);
+    if (!ok) {
+        /* Parent may itself be in a job that forbids breakaway; retry without the flag */
+        ok = CreateProcessA(NULL, mutable_cmd, NULL, NULL, TRUE,
+                            CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, NULL, &si, &pi);
+    }
+    HeapFree(GetProcessHeap(), 0, mutable_cmd);
+
+    /* Child owns its ends now */
+    CloseHandle(inRead);
+    CloseHandle(outWrite);
+    if (errH != INVALID_HANDLE_VALUE) CloseHandle(errH);
+
+    if (!ok) {
+        CloseHandle(inWrite);
+        CloseHandle(outRead);
+        return 0;
+    }
+
+    HANDLE job = CreateJobObjectA(NULL, NULL);
+    if (job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
+        memset(&jeli, 0, sizeof(jeli));
+        jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(job, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli));
+        if (!AssignProcessToJobObject(job, pi.hProcess)) {
+            CloseHandle(job);
+            job = NULL;
+        }
+    }
+    ResumeThread(pi.hThread);
+    CloseHandle(pi.hThread);
+
+    procs[slot].used = 1;
+    procs[slot].hProcess = pi.hProcess;
+    procs[slot].hJob = job;
+    procs[slot].hStdinWrite = inWrite;
+    procs[slot].hStdoutRead = outRead;
+    procs[slot].pid = pi.dwProcessId;
+
+    p_pushinteger(L, slot + 1);
+    p_pushinteger(L, (long long)pi.dwProcessId);
+    return 2;
+}
+
+/* win_write(id, data) -> bytes written (nothing on failure) */
+__declspec(dllexport) int win_write(void* L) {
+    init_lua_api();
+    ProcSlot* ps = get_slot(L, 1);
+    if (!ps || !p_tolstring || !p_pushinteger) return 0;
+    size_t len = 0;
+    const char* data = p_tolstring(L, 2, &len);
+    if (!data) return 0;
+    size_t total = 0;
+    while (total < len) {
+        DWORD wrote = 0;
+        if (!WriteFile(ps->hStdinWrite, data + total, (DWORD)(len - total), &wrote, NULL) || wrote == 0) {
+            break;
+        }
+        total += wrote;
+    }
+    p_pushinteger(L, (long long)total);
+    return 1;
+}
+
+/*
+ * win_read(id, max_bytes, timeout_ms) -> string
+ *   "" when nothing arrived before the timeout, nothing (nil) once the child closed stdout
+ *   and every buffered byte has been consumed.
+ */
+__declspec(dllexport) int win_read(void* L) {
+    init_lua_api();
+    ProcSlot* ps = get_slot(L, 1);
+    if (!ps || !p_pushlstring || !p_tointeger) return 0;
+    long long maxb = p_tointeger(L, 2, NULL);
+    long long timeout = p_tointeger(L, 3, NULL);
+    if (maxb < 1) maxb = 4096;
+    if (maxb > 65536) maxb = 65536;
+    if (timeout < 0) timeout = 0;
+
+    DWORD start = GetTickCount();
+    for (;;) {
+        DWORD avail = 0;
+        if (!PeekNamedPipe(ps->hStdoutRead, NULL, 0, NULL, &avail, NULL)) {
+            return 0; /* broken pipe: child exited and pipe is drained */
+        }
+        if (avail > 0) {
+            char buf[65536];
+            DWORD want = avail < (DWORD)maxb ? avail : (DWORD)maxb;
+            DWORD got = 0;
+            if (!ReadFile(ps->hStdoutRead, buf, want, &got, NULL) || got == 0) return 0;
+            p_pushlstring(L, buf, got);
+            return 1;
+        }
+        if ((long long)(GetTickCount() - start) >= timeout) {
+            p_pushlstring(L, "", 0);
+            return 1;
+        }
+        Sleep(5);
+    }
+}
+
+/* win_alive(id) -> 1 running / 0 exited */
+__declspec(dllexport) int win_alive(void* L) {
+    init_lua_api();
+    ProcSlot* ps = get_slot(L, 1);
+    if (!ps || !p_pushinteger) return 0;
+    p_pushinteger(L, WaitForSingleObject(ps->hProcess, 0) == WAIT_TIMEOUT ? 1 : 0);
+    return 1;
+}
+
+/* win_kill(id): terminate the whole process tree and release handles */
+__declspec(dllexport) int win_kill(void* L) {
+    init_lua_api();
+    ProcSlot* ps = get_slot(L, 1);
+    if (ps) close_slot(ps);
+    return 0;
 }

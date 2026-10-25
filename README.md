@@ -45,10 +45,14 @@ An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, test
 curl -fsSL https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.sh | bash
 ```
 
-#### Windows (PowerShell)
+#### Windows (PowerShell 5.1 or 7+)
 ```powershell
-irm https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.ps1 | iex
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.ps1 | iex
 ```
+The installer reuses a working Lua that ships its DLL, otherwise installs a SHA256-pinned Lua 5.4.2, and writes a single `mcp-bassmachine.cmd` launcher (works in cmd.exe, PowerShell 5.1 and 7). Open a **new** terminal afterwards.
+
+- Run it in Windows Terminal, PowerShell or cmd.exe. **Git Bash/mintty** does not expose a Windows console to native programs; prefix with `winpty` there.
+- MCP servers launch through the native helper in `bin/windows/` (rebuild with `scripts/build-wincon.sh`, needs mingw-w64). Node-based servers (`npx ...`) need Node.js on PATH.
 
 ---
 
@@ -134,10 +138,6 @@ default_model = "anthropic/claude-3.5-sonnet"
 
 ---
 
-## TUI Keyboard Navigation
-
-| Key | Action |
-|---|---|
 ### API key safety
 
 - Keys live in environment variables (`ZENMUX_API_KEY`, `OPENAI_API_KEY`, ...). `bassmachine.toml` keeps only `${ENV_VAR}` placeholders; `save()` never writes a resolved key and rewrites any literal key back to a placeholder.
@@ -145,6 +145,10 @@ default_model = "anthropic/claude-3.5-sonnet"
 - Enable the secret-scan pre-commit hook once per clone: `git config core.hooksPath .githooks`. CI runs `scripts/secret-scan.sh` too.
 - Pin installs with `MCP_BASSMACHINE_REF=<tag> curl ... | bash`.
 
+## TUI Keyboard Navigation
+
+| Key | Action |
+|---|---|
 | `1` - `6` | Switch active tab (Marketplaces, Test & Run, AI Synth, History, Settings, Agent Sync) |
 | `Tab` | Cycle next tab |
 | `↑` / `↓` | Navigate list items and menu options |

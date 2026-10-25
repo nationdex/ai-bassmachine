@@ -1,262 +1,249 @@
-# MCP Bass Machine - Windows PowerShell Installer
+# MCP Bass Machine - Windows PowerShell Installer (Windows PowerShell 5.1 and PowerShell 7+)
 # Usage:
 #   irm https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.ps1 | iex
+#
+# Notes for maintainers:
+#   * ASCII only: Windows PowerShell 5.1 reads BOM-less files as ANSI and mangles UTF-8 glyphs.
+#   * Never `exit` here: under `irm | iex` it closes the user's terminal. Use throw/return.
+#   * Native tools (git, winget) write progress to stderr; with $ErrorActionPreference = 'Stop'
+#     Windows PowerShell 5.1 turns that into a terminating NativeCommandError. All native calls go
+#     through Invoke-Native, which checks the exit code instead.
 
-$ErrorActionPreference = "Stop"
+# TLS 1.2 is not enabled by default on Windows PowerShell 5.1 and GitHub/SourceForge require it.
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch {}
 
-$RepoUrl = "https://github.com/nationdex/mcp-bassmachine.git"
-$UserHome = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { "." }
-$InstallDir = if ($env:MCP_BASSMACHINE_HOME) { $env:MCP_BASSMACHINE_HOME } else { "$UserHome\.mcp-bassmachine" }
-$BinDir = if ($env:MCP_BASSMACHINE_BIN) { $env:MCP_BASSMACHINE_BIN } else { "$UserHome\.local\bin" }
-$StandaloneLuaDir = "$UserHome\.mcp-bassmachine-lua\bin"
+# Windows PowerShell 5.1 renders a progress bar for Invoke-WebRequest that slows downloads ~10x.
+$ProgressPreference = 'SilentlyContinue'
 
-Write-Host "🎛  Installing MCP Bass Machine for Windows..." -ForegroundColor Cyan
-
-# 1. Dependency check: Git
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    Write-Host "Error: 'git' is required to install MCP Bass Machine." -ForegroundColor Red
-    Write-Host "Please install Git (e.g. 'winget install Git.Git') and re-run." -ForegroundColor Yellow
-    exit 1
+# Pinned standalone Lua 5.4.2 (LuaBinaries). Dynamically linked (lua54.exe + lua54.dll), which the
+# native console helper in bin\windows requires to deliver keystrokes.
+$LuaBundles = @{
+    'x64' = @{
+        Url    = 'https://sourceforge.net/projects/luabinaries/files/5.4.2/Tools%20Executables/lua-5.4.2_Win64_bin.zip/download'
+        Sha256 = '5f1e1385ed95a3643f7ed67c4f3767942b2f0f388b66f63e5667e9c3d96293f5'
+    }
+    'x86' = @{
+        Url    = 'https://sourceforge.net/projects/luabinaries/files/5.4.2/Tools%20Executables/lua-5.4.2_Win32_bin.zip/download'
+        Sha256 = '5f51dab8f26fc77a1298be1c79debf95de44579f53094ae509c5b4c7c3d6ac91'
+    }
 }
 
-# 2. Dependency check & Automated installation: Lua (5.1 - 5.4 or LuaJIT)
-function Find-LuaCommand {
-    foreach ($cand in @("luajit", "lua", "lua54", "lua5.4", "lua53", "lua5.3")) {
-        $found = Get-Command $cand -ErrorAction SilentlyContinue
-        if ($found) {
-            return $found.Source
-        }
+# Package IDs verified against microsoft/winget-pkgs (manifests/d/DEVCOM/{Lua,LuaJIT}).
+$WingetLuaPackages = @('DEVCOM.LuaJIT', 'DEVCOM.Lua')
+
+function Write-Step([string]$Message, [string]$Color = 'Cyan') {
+    Write-Host $Message -ForegroundColor $Color
+}
+
+function Invoke-Native {
+    # Runs a native command, streams its output, and returns the exit code.
+    param([Parameter(Mandatory)][string]$File, [string[]]$Arguments = @())
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $File @Arguments 2>&1 | ForEach-Object { Write-Host "$_" }
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
     }
-    # Check standalone install directory and common default Windows installation paths
-    $commonPaths = @(
-        "$StandaloneLuaDir\luajit.exe",
-        "$StandaloneLuaDir\lua54.exe",
-        "$StandaloneLuaDir\lua.exe",
-        "$InstallDir\bin\lua54\lua54.exe",
-        "$InstallDir\bin\lua54\lua.exe",
-        "$BinDir\lua54\lua54.exe",
-        "$BinDir\lua54\lua.exe",
-        "$env:ProgramFiles\Lua\lua.exe",
-        "$env:ProgramFiles\Lua\bin\lua.exe",
-        "${env:ProgramFiles(x86)}\Lua\lua.exe",
-        "${env:ProgramFiles(x86)}\Lua\bin\lua.exe",
-        "$UserHome\scoop\apps\luajit\current\bin\luajit.exe",
-        "$UserHome\scoop\apps\lua\current\bin\lua.exe",
-        "$UserHome\scoop\shims\luajit.exe",
-        "$UserHome\scoop\shims\lua.exe",
-        "$UserHome\AppData\Local\Programs\Lua\lua.exe"
-    )
-    foreach ($p in $commonPaths) {
-        if (Test-Path $p) {
-            return $p
+}
+
+function Get-UserHomeDir {
+    if ($env:USERPROFILE) { return $env:USERPROFILE }
+    if ($env:HOME) { return $env:HOME }
+    return '.'
+}
+
+function Test-LuaWorks([string]$LuaExe) {
+    # A runnable interpreter that also ships a Lua DLL next to it (needed by the keyboard helper).
+    try {
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $out = & $LuaExe -e "io.write(_VERSION)" 2>$null
+        $ErrorActionPreference = $previous
+        return ($LASTEXITCODE -eq 0 -and "$out" -like 'Lua*')
+    } catch {
+        return $false
+    }
+}
+
+function Test-LuaHasDll([string]$LuaExe) {
+    $dir = Split-Path -Parent $LuaExe
+    if (-not $dir) { return $false }
+    return [bool](Get-ChildItem -Path $dir -Filter 'lua*.dll' -ErrorAction SilentlyContinue | Select-Object -First 1) -or
+           [bool](Get-ChildItem -Path $dir -Filter 'luajit*.dll' -ErrorAction SilentlyContinue | Select-Object -First 1)
+}
+
+function Find-SystemLua([string]$StandaloneDir) {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @('luajit', 'lua54', 'lua5.4', 'lua', 'lua53', 'lua5.3')) {
+        $cmd = Get-Command $name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd) { $candidates.Add($cmd.Source) }
+    }
+    foreach ($p in @("$StandaloneDir\lua54.exe", "$StandaloneDir\lua.exe", "$StandaloneDir\luajit.exe")) {
+        if (Test-Path $p) { $candidates.Add($p) }
+    }
+    foreach ($p in $candidates) {
+        if ((Test-LuaWorks $p) -and (Test-LuaHasDll $p)) { return $p }
+    }
+    return $null
+}
+
+function Install-BundledLua([string]$StandaloneDir) {
+    $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+    $bundle = $LuaBundles[$arch]
+    $zip = Join-Path ([IO.Path]::GetTempPath()) ("mcp-bassmachine-lua-" + [Guid]::NewGuid().ToString('N') + '.zip')
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            Write-Step "Downloading Lua 5.4.2 ($arch), attempt $attempt of 3..."
+            Invoke-WebRequest -Uri $bundle.Url -OutFile $zip -UserAgent 'curl/8.0' -UseBasicParsing
+            $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($hash -ne $bundle.Sha256) {
+                Remove-Item $zip -Force -ErrorAction SilentlyContinue
+                throw "SHA256 mismatch (expected $($bundle.Sha256), got $hash)"
+            }
+            New-Item -ItemType Directory -Path $StandaloneDir -Force | Out-Null
+            Expand-Archive -Path $zip -DestinationPath $StandaloneDir -Force
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            $exe = Join-Path $StandaloneDir 'lua54.exe'
+            if (Test-LuaWorks $exe) { return $exe }
+            throw 'Extracted lua54.exe does not run'
+        } catch {
+            Write-Step "Download attempt failed: $($_.Exception.Message)" 'Yellow'
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds (2 * $attempt)
         }
     }
     return $null
 }
 
-$LuaPath = Find-LuaCommand
-
-if (-not $LuaPath) {
-    Write-Host "Notice: Lua not detected in PATH. Attempting automated installation..." -ForegroundColor Yellow
-
-    # Try winget first with verified IDs from winget repository
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Write-Host "Trying winget package managers..." -ForegroundColor Cyan
-        $wingetPackages = @(
-            "DEVCOM.LuaJIT",
-            "DEVCOM.Lua",
-            "rweichler.lua",
-            "Lua.Lua",
-            "Scoop.Scoop"
-        )
-        foreach ($pkg in $wingetPackages) {
-            try {
-                Write-Host "Attempting winget install $pkg..." -ForegroundColor Cyan
-                & winget install --id=$pkg -e --silent --accept-package-agreements --accept-source-agreements 2>$null
-                # Refresh current environment PATH after installer run
-                $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
-                $LuaPath = Find-LuaCommand
-                if ($LuaPath) { break }
-            } catch {
-                # continue
-            }
-        }
+function Install-LuaViaWinget([string]$StandaloneDir) {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return $null }
+    foreach ($pkg in $WingetLuaPackages) {
+        # Skip IDs the configured sources do not know instead of failing noisily
+        if ((Invoke-Native 'winget' @('show', '--id', $pkg, '-e', '--accept-source-agreements')) -ne 0) { continue }
+        Write-Step "Installing $pkg via winget..."
+        $null = Invoke-Native 'winget' @('install', '--id', $pkg, '-e', '--silent', '--accept-package-agreements', '--accept-source-agreements')
+        # winget updates the persistent PATH; merge it into this session without dropping session-only entries
+        $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $env:Path = (@($env:Path, $user, $machine) | Where-Object { $_ }) -join ';'
+        $found = Find-SystemLua $StandaloneDir
+        if ($found) { return $found }
     }
-
-    # Try Scoop if winget did not produce Lua
-    if (-not $LuaPath -and (Get-Command scoop -ErrorAction SilentlyContinue)) {
-        try {
-            Write-Host "Installing Lua via Scoop..." -ForegroundColor Cyan
-            & scoop install lua
-            $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
-            if (Test-Path "$UserHome\scoop\shims") {
-                $env:Path = "$env:Path;$UserHome\scoop\shims"
-            }
-            $LuaPath = Find-LuaCommand
-        } catch {}
-    }
-
-    # Try Chocolatey if available
-    if (-not $LuaPath -and (Get-Command choco -ErrorAction SilentlyContinue)) {
-        try {
-            Write-Host "Installing Lua via Chocolatey..." -ForegroundColor Cyan
-            & choco install lua -y
-            $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
-            if (Test-Path "$UserHome\AppData\Local\Chocolatey\bin") {
-                $env:Path = "$env:Path;$UserHome\AppData\Local\Chocolatey\bin"
-            }
-            $LuaPath = Find-LuaCommand
-        } catch {}
-    }
-
-    # Direct automated standalone zip fallback from sourceforge if no package manager succeeded
-    if (-not $LuaPath) {
-        try {
-            Write-Host "Downloading standalone Lua 5.4 binaries for Windows..." -ForegroundColor Cyan
-            $luaZipUrl = "https://sourceforge.net/projects/luabinaries/files/5.4.2/Tools%20Executables/lua-5.4.2_Win64_bin.zip/download"
-            $tempZip = "$env:TEMP\lua54_win64.zip"
-            New-Item -ItemType Directory -Path $StandaloneLuaDir -Force | Out-Null
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $luaZipUrl -OutFile $tempZip -UserAgent "curl/8.0" -UseBasicParsing
-            Expand-Archive -Path $tempZip -DestinationPath $StandaloneLuaDir -Force
-            Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-            if (Test-Path "$StandaloneLuaDir\lua54.exe") {
-                $LuaPath = "$StandaloneLuaDir\lua54.exe"
-            } elseif (Test-Path "$StandaloneLuaDir\lua.exe") {
-                $LuaPath = "$StandaloneLuaDir\lua.exe"
-            }
-            if (Test-Path $StandaloneLuaDir) {
-                $env:Path = "$env:Path;$StandaloneLuaDir"
-            }
-        } catch {
-            Write-Host "Direct binary download could not complete: $_" -ForegroundColor Yellow
-        }
-    }
+    return $null
 }
 
-if (-not $LuaPath) {
-    Write-Host ""
-    Write-Host "Warning: Could not automatically detect or install Lua 5.X on this machine." -ForegroundColor Yellow
-    Write-Host "Please install Lua using either:" -ForegroundColor Yellow
-    Write-Host "  1. Winget: winget install rweichler.lua" -ForegroundColor White
-    Write-Host "  2. Scoop:  scoop install lua" -ForegroundColor White
-    Write-Host "  3. Choco:  choco install lua" -ForegroundColor White
-    Write-Host "  4. Official Windows Binaries: https://luabinaries.sourceforge.net" -ForegroundColor White
-    Write-Host ""
-    $LuaPath = "lua"
-}
-
-Write-Host "Using Lua engine: $LuaPath" -ForegroundColor Green
-
-# 3. Clone or Update repository
-if (Test-Path "$InstallDir\.git") {
-    Write-Host "Existing installation found at $InstallDir. Updating repository..." -ForegroundColor Cyan
-    git -C "$InstallDir" fetch --depth=1 origin main
-    git -C "$InstallDir" reset --hard origin/main
-} else {
-    Write-Host "Cloning repository into $InstallDir..." -ForegroundColor Cyan
-    if (Test-Path "$InstallDir") {
-        Remove-Item -Recurse -Force "$InstallDir"
+function Add-ToUserPath([string]$Dir) {
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $entries = @()
+    if ($userPath) { $entries = $userPath.Split(';') | Where-Object { $_ } }
+    $already = $entries | Where-Object { $_.TrimEnd('\') -ieq $Dir.TrimEnd('\') }
+    if (-not $already) {
+        Write-Step "Adding $Dir to User PATH..."
+        [Environment]::SetEnvironmentVariable('Path', (($entries + $Dir) -join ';'), 'User')
+        $env:Path = "$env:Path;$Dir"
+        return $true
     }
-    git clone --depth=1 "$RepoUrl" "$InstallDir"
+    return $false
 }
 
-# 4. Create Windows Command / PowerShell wrappers in BinDir
-if (-not (Test-Path "$BinDir")) {
-    New-Item -ItemType Directory -Path "$BinDir" -Force | Out-Null
-}
-
-$CmdWrapper = "$BinDir\mcp-bassmachine.cmd"
-$Ps1Wrapper = "$BinDir\mcp-bassmachine.ps1"
-
-# .cmd wrapper for CMD & general CLI (launches via PowerShell wrapper to inherit raw VT console mode)
-$CmdContent = @"
+function New-CmdWrapper([string]$Path, [string]$InstallDir, [string]$LuaPath) {
+    # One launcher for cmd.exe, PowerShell 5.1 and PowerShell 7. The script's own console-mode
+    # handling lives in the native helper (bin\windows), so no PowerShell Add-Type is needed.
+    # A .ps1 wrapper is deliberately not generated: the default Restricted execution policy blocks it.
+    $content = @"
 @echo off
 setlocal
+set "MCPBASS_OLDCP="
+for /f "tokens=2 delims=:." %%a in ('chcp') do set "MCPBASS_OLDCP=%%a"
 chcp 65001 >nul 2>nul
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0mcp-bassmachine.ps1" %*
-if errorlevel 1 (
-    cd /d "$InstallDir"
-    "$LuaPath" src\main.lua %*
-)
+cd /d "$InstallDir"
+"$LuaPath" src\main.lua %*
+set "MCPBASS_RC=%errorlevel%"
+if defined MCPBASS_OLDCP chcp %MCPBASS_OLDCP% >nul 2>nul
+exit /b %MCPBASS_RC%
 "@
-Set-Content -Path "$CmdWrapper" -Value $CmdContent -Encoding ASCII
+    # CRLF + ASCII: what cmd.exe expects
+    $content = $content -replace "`r?`n", "`r`n"
+    [IO.File]::WriteAllText($Path, $content, (New-Object System.Text.ASCIIEncoding))
+}
 
-# .ps1 wrapper for PowerShell 5.0 through 7+ (forces UTF-8 I/O & Win32 console raw VT mode)
-$Ps1Content = @"
-Push-Location "$InstallDir"
-try {
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    [Console]::InputEncoding = [System.Text.Encoding]::UTF8
-    `$OutputEncoding = [System.Text.Encoding]::UTF8
+function Install-MCPBassMachine {
+    $RepoUrl = 'https://github.com/nationdex/mcp-bassmachine.git'
+    $UserHome = Get-UserHomeDir
+    $InstallDir = if ($env:MCP_BASSMACHINE_HOME) { $env:MCP_BASSMACHINE_HOME } else { Join-Path $UserHome '.mcp-bassmachine' }
+    $BinDir = if ($env:MCP_BASSMACHINE_BIN) { $env:MCP_BASSMACHINE_BIN } else { Join-Path $UserHome '.local\bin' }
+    $StandaloneLuaDir = Join-Path $UserHome '.mcp-bassmachine-lua\bin'
+    $Ref = if ($env:MCP_BASSMACHINE_REF) { $env:MCP_BASSMACHINE_REF } else { 'main' }
 
-    # Win32 Console Raw VT Mode initialization (silent execution)
-    try {
-        `$win32 = Add-Type -MemberDefinition @'
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern IntPtr GetStdHandle(int nStdHandle);
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
-[DllImport("kernel32.dll", SetLastError = true)]
-public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-'@ -Name "ConsoleRawHelper" -Namespace "McpBass" -PassThru
+    Write-Step 'Installing MCP Bass Machine for Windows...'
 
-        `$hIn = `$win32::GetStdHandle(-10)
-        `$hOut = `$win32::GetStdHandle(-11)
-        [uint32]`$origIn = 0
-        [uint32]`$origOut = 0
-        `$null = `$win32::GetConsoleMode(`$hIn, [ref]`$origIn)
-        `$null = `$win32::GetConsoleMode(`$hOut, [ref]`$origOut)
+    # 1. Git
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        throw "git is required. Install it (winget install --id Git.Git -e) and re-run this installer."
+    }
 
-        # Output: ENABLE_PROCESSED_OUTPUT (1) | ENABLE_VIRTUAL_TERMINAL_PROCESSING (4)
-        `$null = `$win32::SetConsoleMode(`$hOut, `$origOut -bor 0x0005)
-        # Input: ENABLE_VIRTUAL_TERMINAL_INPUT (0x0200 = 512), disable LINE (2), ECHO (4), PROCESSED (1)
-        `$null = `$win32::SetConsoleMode(`$hIn, (`$origIn -band (-bnot 7)) -bor 0x0200)
-    } catch {}
+    # 2. Lua: reuse a working dynamically linked one, otherwise the pinned bundle, then winget
+    $LuaPath = Find-SystemLua $StandaloneLuaDir
+    if (-not $LuaPath) {
+        Write-Step 'No suitable Lua found (needs lua.exe plus its Lua DLL). Installing a pinned build...' 'Yellow'
+        $LuaPath = Install-BundledLua $StandaloneLuaDir
+    }
+    if (-not $LuaPath) {
+        Write-Step 'Bundled download failed; trying winget...' 'Yellow'
+        $LuaPath = Install-LuaViaWinget $StandaloneLuaDir
+    }
+    if (-not $LuaPath) {
+        throw "Could not install Lua automatically. Download lua-5.4.2_Win64_bin.zip from https://luabinaries.sourceforge.net, extract it to '$StandaloneLuaDir', then re-run."
+    }
+    Write-Step "Using Lua engine: $LuaPath" 'Green'
 
-    # Dynamic Lua executable resolution
-    `$runLua = "$LuaPath"
-    if (-not (Test-Path `$runLua -ErrorAction SilentlyContinue)) {
-        foreach (`$cand in @("luajit", "lua", "lua54", "lua5.4", "$StandaloneLuaDir\lua54.exe", "$StandaloneLuaDir\luajit.exe", "$StandaloneLuaDir\lua.exe")) {
-            if (Get-Command `$cand -ErrorAction SilentlyContinue) {
-                `$runLua = `$cand
-                break
-            } elseif (Test-Path `$cand -ErrorAction SilentlyContinue) {
-                `$runLua = `$cand
-                break
-            }
+    # 3. Clone or fast-forward update (never discards local edits such as bassmachine.toml)
+    if (Test-Path (Join-Path $InstallDir '.git')) {
+        Write-Step "Existing installation found at $InstallDir. Updating..."
+        if ((Invoke-Native 'git' @('-C', $InstallDir, 'fetch', '--depth=1', 'origin', $Ref)) -ne 0) {
+            throw 'git fetch failed. Check your network connection.'
+        }
+        if ((Invoke-Native 'git' @('-C', $InstallDir, 'merge', '--ff-only', 'FETCH_HEAD')) -ne 0) {
+            throw "Update aborted: local changes in $InstallDir conflict with upstream. Commit or stash them and re-run."
+        }
+    } else {
+        Write-Step "Cloning repository into $InstallDir..."
+        if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir }
+        if ((Invoke-Native 'git' @('clone', '--depth=1', '--branch', $Ref, $RepoUrl, $InstallDir)) -ne 0) {
+            throw 'git clone failed. Check your network connection.'
         }
     }
 
-    & `$runLua src\main.lua @args
-} finally {
+    # 4. Launcher in BinDir (also removes the old .ps1 wrapper that execution policy could block)
+    New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+    $CmdWrapper = Join-Path $BinDir 'mcp-bassmachine.cmd'
+    New-CmdWrapper -Path $CmdWrapper -InstallDir $InstallDir -LuaPath $LuaPath
+    Remove-Item (Join-Path $BinDir 'mcp-bassmachine.ps1') -Force -ErrorAction SilentlyContinue
+
+    # 5. PATH
+    $null = Add-ToUserPath $BinDir
+
+    Write-Host ''
+    Write-Step 'MCP Bass Machine installed successfully!' 'Green'
+    Write-Step "Installed to:  $InstallDir"
+    Write-Step "Launcher:      $CmdWrapper"
+    Write-Host ''
+    Write-Host 'Open a NEW terminal (Windows Terminal, PowerShell or cmd.exe) and run:' -ForegroundColor White
+    Write-Host '  mcp-bassmachine' -ForegroundColor Magenta
+    Write-Host 'Git Bash/mintty cannot deliver keyboard input to native Windows programs; use winpty there.' -ForegroundColor DarkGray
+    Write-Host ''
+}
+
+# MCP_BASSMACHINE_NOEXEC=1 loads the functions without installing (used by tests/test_install_ps1.ps1)
+if (-not $env:MCP_BASSMACHINE_NOEXEC) {
     try {
-        if (`$win32 -and `$origIn -ne 0) {
-            `$null = `$win32::SetConsoleMode(`$hIn, `$origIn)
-            `$null = `$win32::SetConsoleMode(`$hOut, `$origOut)
-        }
-    } catch {}
-    Pop-Location
+        Install-MCPBassMachine
+    } catch {
+        Write-Host ''
+        Write-Host "Installation failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
 }
-"@
-Set-Content -Path "$Ps1Wrapper" -Value $Ps1Content -Encoding UTF8
-
-# 5. Add BinDir to User PATH environment variable if not already present
-$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($UserPath -notlike "*$BinDir*") {
-    Write-Host "Adding $BinDir to User PATH..." -ForegroundColor Cyan
-    $NewPath = if ($UserPath) { "$UserPath;$BinDir" } else { "$BinDir" }
-    [Environment]::SetEnvironmentVariable("Path", $NewPath, "User")
-    $env:Path = "$env:Path;$BinDir"
-    Write-Host "PATH updated successfully." -ForegroundColor Green
-}
-
-# 6. Success Banner
-Write-Host ""
-Write-Host "✓ MCP Bass Machine installed successfully!" -ForegroundColor Green
-Write-Host "Installed to:  $InstallDir" -ForegroundColor Cyan
-Write-Host "Binary linked: $CmdWrapper" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "To launch now in PowerShell or CMD:" -ForegroundColor White
-Write-Host "  mcp-bassmachine" -ForegroundColor Magenta
-Write-Host ""

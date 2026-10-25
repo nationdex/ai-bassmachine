@@ -9,12 +9,13 @@ McpRunner.__index = McpRunner
 
 local runner_counter = 0
 
-function McpRunner.new(command_str, env_vars)
+function McpRunner.new(command_str, env_vars, read_timeout_ms)
   local self = setmetatable({}, McpRunner)
   runner_counter = runner_counter + 1
   self.id = tostring(os.time()) .. "_" .. tostring(runner_counter) .. "_" .. term.random_hex(6)
   self.command = command_str
   self.env = env_vars or {}
+  self.read_timeout_ms = read_timeout_ms or 30000
   local tmp_dir = term.get_temp_dir()
   self.fifo_in = string.format("%s/mcp_bass_in_%s.fifo", tmp_dir, self.id)
   self.fifo_out = string.format("%s/mcp_bass_out_%s.fifo", tmp_dir, self.id)
@@ -29,18 +30,83 @@ function McpRunner.new(command_str, env_vars)
   return self
 end
 
+-- Adapts the native Win32 process handle to the file-like read/write/flush/close interface
+-- McpClient expects. Reads poll with a deadline so a silent server can never freeze the TUI.
+local function windows_pipe(proc, id, read_timeout_ms)
+  local pending = ""
+  local pipe = {}
+
+  function pipe:write(data)
+    local n = proc.write(id, data)
+    return n ~= nil and self or nil
+  end
+
+  function pipe:flush()
+    return true
+  end
+
+  function pipe:read(_fmt)
+    local deadline = os.clock() + read_timeout_ms / 1000
+    while true do
+      local nl = pending:find("\n", 1, true)
+      if nl then
+        local line = pending:sub(1, nl - 1):gsub("\r$", "")
+        pending = pending:sub(nl + 1)
+        return line
+      end
+      local chunk = proc.read(id, 4096, 50)
+      if chunk == nil then
+        -- Child closed stdout: hand back any unterminated tail once, then EOF
+        if #pending > 0 then
+          local tail = pending
+          pending = ""
+          return tail
+        end
+        return nil
+      end
+      pending = pending .. chunk
+      if #chunk == 0 and os.clock() >= deadline then
+        return nil
+      end
+    end
+  end
+
+  function pipe:close()
+    return true
+  end
+
+  return pipe
+end
+
 function McpRunner:start()
   if term.is_windows then
-    -- On Windows, bidirectional two-way communication with subprocesses is supported
-    -- via piped child processes; if full IPC is unavailable, return an informative error
-    -- rather than hanging on POSIX FIFO creation.
-    local pipe = term.safe_popen(self.command)
-    if not pipe then
+    local proc = term.win_proc
+    if not proc then
+      return false,
+        "Native Windows helper (bin/windows/bass_wincon64.dll) not found or outdated; "
+          .. "running MCP servers on Windows needs it. Reinstall or run scripts/build-wincon.sh."
+    end
+
+    -- cmd.exe resolves npx.cmd / .bat shims that CreateProcess alone cannot launch
+    local cmdline = 'cmd.exe /d /s /c "' .. self.command .. '"'
+    local id, pid = proc.spawn(cmdline, self.log_file)
+    if not id then
       return false, "Failed to launch process: " .. self.command
     end
-    self.out_handle = pipe
-    self.client = McpClient.new(nil, self.out_handle)
+    self.win_id = id
+    self.pid = pid
+    self.in_handle = windows_pipe(proc, id, self.read_timeout_ms)
+    self.out_handle = self.in_handle
+    self.client = McpClient.new(self.in_handle, self.out_handle)
     self.is_running = true
+    self.start_time = os.time()
+
+    local ok, err = self.client:initialize()
+    if not ok then
+      local log = self:get_stderr_log()
+      self:stop()
+      return false, "Handshake failed: " .. tostring(err) .. (#log > 0 and (" | stderr: " .. log:sub(1, 300)) or "")
+    end
     return true, self.client
   end
 
@@ -127,16 +193,25 @@ function McpRunner:stop()
     self.out_handle = nil
   end
 
-  if self.pid then
+  if self.win_id then
+    -- Kills the whole job (cmd.exe -> npx -> node), not just the shell
+    if term.win_proc then
+      pcall(term.win_proc.kill, self.win_id)
+    end
+    self.win_id = nil
+    self.pid = nil
+  elseif self.pid then
     os.execute(string.format("kill -TERM %d 2>/dev/null || kill -KILL %d 2>/dev/null", self.pid, self.pid))
     self.pid = nil
   end
 
   -- Cleanup temporary files
-  os.remove(self.fifo_in)
-  os.remove(self.fifo_out)
+  if not term.is_windows then
+    os.remove(self.fifo_in)
+    os.remove(self.fifo_out)
+    os.remove(self.pid_file)
+  end
   os.remove(self.log_file)
-  os.remove(self.pid_file)
 
   self.is_running = false
 end

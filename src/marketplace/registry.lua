@@ -1,28 +1,9 @@
-local function get_home_dir()
-  local home = os.getenv("HOME")
-  if not home or #home == 0 then
-    local userprofile = os.getenv("USERPROFILE")
-    if userprofile and #userprofile > 0 then
-      home = userprofile
-    else
-      local homedrive = os.getenv("HOMEDRIVE") or ""
-      local homepath = os.getenv("HOMEPATH") or ""
-      if #homedrive > 0 and #homepath > 0 then
-        home = homedrive .. homepath
-      else
-        home = "."
-      end
-    end
-  end
-  local clean = home:gsub("\\", "/")
-  return clean
-end
--- MCP Bass Machine - Multi-Marketplace MCP Registry
--- Fetches and searches MCP servers from Official Registry, Punkpeye Awesome-MCP,
--- Wong2 Awesome-MCP, and Appcypher Awesome-MCP registries.
-
 local json = require("mcp-bassmachine.utils.json")
 local term = require("mcp-bassmachine.utils.term")
+
+local get_home_dir = term.get_home_dir
+-- Scratch location that exists on every OS (the old hard-coded /tmp does not exist on Windows)
+local TEMP_DIR = term.get_temp_dir()
 
 local Registry = {}
 Registry.__index = Registry
@@ -36,7 +17,7 @@ local CURATED_CATALOG = {
     source = "official",
     description = "Secure direct filesystem access with configurable read/write boundaries.",
     command = "npx",
-    args = { "-y", "@modelcontextprotocol/server-filesystem", "/tmp" },
+    args = { "-y", "@modelcontextprotocol/server-filesystem", TEMP_DIR },
     tags = { "filesystem", "official", "io" },
     category = "Utilities",
   },
@@ -58,7 +39,7 @@ local CURATED_CATALOG = {
     source = "official",
     description = "Introspect and query local SQLite databases with automated schema extraction.",
     command = "uvx",
-    args = { "mcp-server-sqlite", "--db-path", "/tmp/bass.db" },
+    args = { "mcp-server-sqlite", "--db-path", TEMP_DIR .. "/bass.db" },
     tags = { "database", "sqlite", "sql" },
     category = "Database",
   },
