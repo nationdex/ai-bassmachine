@@ -552,7 +552,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             state.status_msg = string.format("Purged '%s' from ALL AI agent environments.", cur_srv)
             state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
           end
-        elseif (key == "s" or key == "S" or key == "b" or key == "B") and active_tab_idx == 6 then
+        elseif (key == "enter" or key == "s" or key == "S" or key == "b" or key == "B") and active_tab_idx == 6 then
           -- Broadcast / Sync selected existent MCP across ALL agent environments
           local s_keys = state.current_target_servers or {}
           local cur_srv = s_keys[state.selected_env_server_idx or 1]
@@ -594,7 +594,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             state.active_runner = nil
             state.status_msg = "Ephemeral runner stopped."
           end
-        elseif (key == "x" or key == "X") and active_tab_idx == 2 then
+        elseif (key == "enter" or key == "x" or key == "X") and active_tab_idx == 2 then
           -- Execute tool call on active runner
           if state.active_runner and state.active_runner.client then
             local tools = state.active_tools or {}
@@ -676,6 +676,29 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           -- Clean stale history (>24h)
           history:clean_stale(24)
           state.status_msg = "Stale history entries purged."
+        elseif key == "enter" and active_tab_idx == 4 then
+          -- Re-launch selected history session ephemerally
+          local items = history.entries or {}
+          local selected = items[state.selected_history_idx or 1]
+          if selected and selected.command then
+            if state.active_runner then
+              state.active_runner:stop()
+            end
+            state.status_msg = "Re-launching ephemeral MCP: " .. (selected.name or "session") .. "..."
+            engine:render()
+            local runner = McpRunner.new(selected.command)
+            local ok, client_or_err = runner:start()
+            if ok then
+              state.active_runner = runner
+              local tools = client_or_err:list_tools() or {}
+              state.status_msg =
+                string.format("Ephemeral %s active! Discovered %d tools.", selected.name or "session", #tools)
+              active_tab_idx = 2
+            else
+              runner:stop()
+              state.status_msg = "Re-launch failed: " .. tostring(client_or_err)
+            end
+          end
         elseif (key == "enter" or key == "e" or key == "E") and active_tab_idx == 5 then
           -- Edit setting value via interactive modal
           local s = state.settings_keys and state.settings_keys[state.selected_setting_idx]

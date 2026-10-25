@@ -233,7 +233,7 @@ function term.get_window_size(force)
     return cached_rows, cached_cols
   else
     -- 3. Unix: Query stty size via /dev/tty explicitly first so SSH and redirected streams report accurate dimensions
-    local f = io.popen("stty size < /dev/tty 2>/dev/null || stty size 2>/dev/null", "r")
+    local f = io.popen("( stty size < /dev/tty ) 2>/dev/null || stty size 2>/dev/null", "r")
     if f then
       local out = f:read("*a")
       f:close()
@@ -472,6 +472,9 @@ local function parse_keys_from_chunk(stream)
       table.insert(keys, "backspace")
       i = i + 1
     elseif c == "\r" or c == "\n" then
+      if c == "\r" and i + 1 <= len and stream:sub(i + 1, i + 1) == "\n" then
+        i = i + 1
+      end
       table.insert(keys, "enter")
       i = i + 1
     elseif c == "\t" then
@@ -529,10 +532,7 @@ function term.read_keys()
       end
       table.insert(keys, k)
     end
-    return keys
-  end
-
-  if is_windows then
+  elseif is_windows then
     if win_ffi then
       -- 1. Windows with FFI (LuaJIT): instant non-blocking check & drain via _kbhit & _getch
       while win_ffi.C._kbhit() ~= 0 do
@@ -595,7 +595,6 @@ function term.read_keys()
           table.insert(keys, string.char(ch))
         end
       end
-      return keys
     else
       -- 2. Windows fallback without FFI (PUC Lua 5.1 - 5.4):
       -- Never call io.read(256) on Windows because fread will block waiting for 256 bytes!
@@ -667,7 +666,6 @@ function term.read_keys()
           end
         end
       end
-      return keys
     end
   else
     -- 3. Unix (Linux / macOS): non-blocking read via stty min 0 time 0
@@ -678,8 +676,16 @@ function term.read_keys()
         table.insert(keys, k)
       end
     end
-    return keys
   end
+
+  -- Deduplicate consecutive identical "enter" keys in same frame batch (e.g. from CRLF)
+  local deduped = {}
+  for _, k in ipairs(keys) do
+    if not (k == "enter" and #deduped > 0 and deduped[#deduped] == "enter") then
+      table.insert(deduped, k)
+    end
+  end
+  return deduped
 end
 
 -- Read single key (legacy wrapper for backward compatibility)

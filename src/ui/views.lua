@@ -219,7 +219,7 @@ function views.render_test_workspace(engine, active_runner, state)
     if state.last_tool_output then
       engine:draw_text(r, right_col + 4, term.truncate(state.last_tool_output, right_w - 8), term.palette.fg_primary)
     else
-      engine:draw_text(r, right_col + 4, "(Ready to execute. Press [X] to call tool)", term.palette.fg_muted)
+      engine:draw_text(r, right_col + 4, "(Ready to execute. Press [Enter] / [X] to call tool)", term.palette.fg_muted)
     end
   end
 end
@@ -350,7 +350,7 @@ function views.render_history(engine, history, state)
       engine:draw_text(
         bottom_row,
         right_col + 2,
-        term.truncate("Press [C] Clean All History │ [X] Purge >24h", right_w - 4),
+        term.truncate("Press [Enter] Re-run │ [C] Clean All │ [X] Purge >24h", right_w - 4),
         term.palette.fg_red .. term.colors.bold
       )
     end
@@ -523,7 +523,7 @@ function views.render_env_manager(engine, env_mgr, state)
       engine:draw_text(
         bottom_row - 3,
         right_col + 2,
-        term.truncate("Press [S] / [B] Broadcast & Install to ALL Agents", right_w - 4),
+        term.truncate("Press [Enter] / [S] Broadcast & Install to ALL Agents", right_w - 4),
         term.palette.fg_cyan .. term.colors.bold
       )
     end

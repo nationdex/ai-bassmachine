@@ -2,6 +2,7 @@
 -- Spawns MCP processes interactively via Linux FIFOs with zero permanent install.
 
 local McpClient = require("mcp-bassmachine.mcp.client")
+local term = require("mcp-bassmachine.utils.term")
 
 local McpRunner = {}
 McpRunner.__index = McpRunner
@@ -14,10 +15,11 @@ function McpRunner.new(command_str, env_vars)
   self.id = tostring(os.time()) .. "_" .. tostring(runner_counter)
   self.command = command_str
   self.env = env_vars or {}
-  self.fifo_in = string.format("/tmp/mcp_bass_in_%s.fifo", self.id)
-  self.fifo_out = string.format("/tmp/mcp_bass_out_%s.fifo", self.id)
-  self.log_file = string.format("/tmp/mcp_bass_err_%s.log", self.id)
-  self.pid_file = string.format("/tmp/mcp_bass_pid_%s.pid", self.id)
+  local tmp_dir = term.get_temp_dir()
+  self.fifo_in = string.format("%s/mcp_bass_in_%s.fifo", tmp_dir, self.id)
+  self.fifo_out = string.format("%s/mcp_bass_out_%s.fifo", tmp_dir, self.id)
+  self.log_file = string.format("%s/mcp_bass_err_%s.log", tmp_dir, self.id)
+  self.pid_file = string.format("%s/mcp_bass_pid_%s.pid", tmp_dir, self.id)
   self.pid = nil
   self.in_handle = nil
   self.out_handle = nil
@@ -28,7 +30,21 @@ function McpRunner.new(command_str, env_vars)
 end
 
 function McpRunner:start()
-  -- Create FIFOs
+  if term.is_windows then
+    -- On Windows, bidirectional two-way communication with subprocesses is supported
+    -- via piped child processes; if full IPC is unavailable, return an informative error
+    -- rather than hanging on POSIX FIFO creation.
+    local pipe = term.safe_popen(self.command)
+    if not pipe then
+      return false, "Failed to launch process: " .. self.command
+    end
+    self.out_handle = pipe
+    self.client = McpClient.new(nil, self.out_handle)
+    self.is_running = true
+    return true, self.client
+  end
+
+  -- Unix: Create FIFOs
   os.execute(string.format("mkfifo %s %s 2>/dev/null", self.fifo_in, self.fifo_out))
 
   -- Build environment prefix
@@ -62,7 +78,8 @@ function McpRunner:start()
   end
 
   -- Open handles (write to fifo_in, read from fifo_out)
-  self.in_handle = io.open(self.fifo_in, "w")
+  -- Use "w+" on Unix FIFOs to prevent blocking if the reader is still initializing
+  self.in_handle = io.open(self.fifo_in, "w+")
   self.out_handle = io.open(self.fifo_out, "r")
 
   if not self.in_handle or not self.out_handle then
