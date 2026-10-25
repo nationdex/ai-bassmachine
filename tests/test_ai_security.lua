@@ -48,7 +48,10 @@ assert(read_all(cfg_path) == nil, "curl config not removed")
 
 -- 3. Injection through model id / base_url is rejected before anything is spawned
 captured = {}
-local _, e1 = ai:chat_completion({ { role = "user", content = "hi" } }, { provider = "zenmux", model = "x'; touch /tmp/pwned; '" })
+local _, e1 = ai:chat_completion(
+  { { role = "user", content = "hi" } },
+  { provider = "zenmux", model = "x'; touch /tmp/pwned; '" }
+)
 assert(e1 and e1:find("Invalid model id"), "malicious model id accepted: " .. tostring(e1))
 assert(captured.cmd == nil, "curl spawned for invalid model")
 

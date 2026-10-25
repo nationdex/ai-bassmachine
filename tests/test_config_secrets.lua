@@ -14,7 +14,9 @@ local function read_all(p)
 end
 
 local f = assert(io.open(path, "w"))
-f:write('[providers.zenmux]\nname = "ZenMux AI"\nbase_url = "https://zenmux.ai/api/v1"\napi_key = "${ZENMUX_API_KEY}"\n')
+f:write(
+  '[providers.zenmux]\nname = "ZenMux AI"\nbase_url = "https://zenmux.ai/api/v1"\napi_key = "${ZENMUX_API_KEY}"\n'
+)
 f:close()
 
 -- 1. Env key is resolved at runtime but never persisted by save()

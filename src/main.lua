@@ -1010,13 +1010,19 @@ function app.main(args)
     os.exit(0)
   elseif cmd == "keytest" then
     -- Keyboard diagnostics: shows which input path is active and echoes keys for 15 seconds
-    io.write(string.format("Lua: %s  windows=%s  mintty=%s\n", _VERSION, tostring(term.is_windows), tostring(term.is_mintty())))
+    io.write(
+      string.format("Lua: %s  windows=%s  mintty=%s\n", _VERSION, tostring(term.is_windows), tostring(term.is_mintty()))
+    )
     term.enter_raw_mode()
     io.write("\27[?1049l")
-    io.write(string.format(
-      "raw_ok=%s  api_unresolved=%s  native_dll=%s\n",
-      tostring(term.win_raw_ok), tostring(term.win_api_unresolved == true), tostring(term.win_proc ~= nil)
-    ))
+    io.write(
+      string.format(
+        "raw_ok=%s  api_unresolved=%s  native_dll=%s\n",
+        tostring(term.win_raw_ok),
+        tostring(term.win_api_unresolved == true),
+        tostring(term.win_proc ~= nil)
+      )
+    )
     io.write("Press arrow keys, Home/End, PgUp/PgDn (15s). Raw results:\n")
     local t_end = os.time() + 15
     while os.time() < t_end do

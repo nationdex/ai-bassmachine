@@ -157,7 +157,8 @@ function term.is_mintty()
     return false
   end
   local term_prog = os.getenv("TERM_PROGRAM") or ""
-  return os.getenv("MSYSTEM") ~= nil and (term_prog == "mintty" or (os.getenv("TERM") or ""):match("^xterm") ~= nil)
+  return os.getenv("MSYSTEM") ~= nil
+    and (term_prog == "mintty" or (os.getenv("TERM") or ""):match("^xterm") ~= nil)
     and os.getenv("WT_SESSION") == nil
 end
 
