@@ -28,7 +28,7 @@ function SkillManager.parse_skill_md(content, fallback_name)
       for line in yaml_block:gmatch("[^\r\n]+") do
         local k, v = line:match("^([%w_%-]+)%s*:%s*(.*)$")
         if k and v then
-          v = v:gsub('^["\']', ""):gsub('["\']$', ""):gsub("^%s+", ""):gsub("%s+$", "")
+          v = v:gsub("^[\"']", ""):gsub("[\"']$", ""):gsub("^%s+", ""):gsub("%s+$", "")
           meta[k] = v
         end
       end
@@ -228,15 +228,13 @@ function SkillManager:remove_skill(skill_name, target_id)
     if not target_id or target_id == "all" or target.id == target_id then
       local skill_dir = target.dir .. "/" .. clean_name
       local skill_file = skill_dir .. "/SKILL.md"
-      local removed = false
-
       os.remove(skill_file)
       if term.is_windows then
         os.execute(string.format('cmd.exe /c "rd /s /q \\"%s\\"" 2>nul', skill_dir:gsub("/", "\\")))
       else
         os.execute(string.format("rm -rf %s 2>/dev/null", term.shell_quote(skill_dir)))
       end
-      removed = true
+      local removed = true
 
       table.insert(results, {
         target = target.id,

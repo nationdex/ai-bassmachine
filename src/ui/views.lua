@@ -281,7 +281,15 @@ function views.render_skills(engine, skill_mgr, state)
   local right_w = width - right_col
   local selected = items[sel_idx]
 
-  engine:draw_box(4, right_col, main_h, right_w, term.palette.border, term.palette.bg_dark, "Skill Inspector (SKILL.md)")
+  engine:draw_box(
+    4,
+    right_col,
+    main_h,
+    right_w,
+    term.palette.border,
+    term.palette.bg_dark,
+    "Skill Inspector (SKILL.md)"
+  )
 
   if selected then
     local r = 6
@@ -289,17 +297,26 @@ function views.render_skills(engine, skill_mgr, state)
     r = r + 1
     engine:draw_text(r, right_col + 2, "Directory:   " .. (selected.dir_name or selected.name), term.palette.fg_primary)
     r = r + 1
-    local in_str = (selected.installed_in and #selected.installed_in > 0)
-      and table.concat(selected.installed_in, ", ")
+    local in_str = (selected.installed_in and #selected.installed_in > 0) and table.concat(selected.installed_in, ", ")
       or "none"
     engine:draw_text(r, right_col + 2, "Agents:      " .. in_str, term.palette.fg_neon_green)
     r = r + 1
-    engine:draw_text(r, right_col + 2, "Path:        " .. term.truncate(selected.path or "", right_w - 16), term.palette.fg_muted)
+    engine:draw_text(
+      r,
+      right_col + 2,
+      "Path:        " .. term.truncate(selected.path or "", right_w - 16),
+      term.palette.fg_muted
+    )
     r = r + 2
 
     engine:draw_text(r, right_col + 2, "Description:", term.palette.fg_primary .. term.colors.bold)
     r = r + 1
-    engine:draw_text(r, right_col + 4, term.truncate(selected.description or "None", right_w - 8), term.palette.fg_muted)
+    engine:draw_text(
+      r,
+      right_col + 4,
+      term.truncate(selected.description or "None", right_w - 8),
+      term.palette.fg_muted
+    )
     r = r + 2
 
     engine:draw_text(r, right_col + 2, "SKILL.md Content Preview:", term.palette.fg_amber .. term.colors.bold)

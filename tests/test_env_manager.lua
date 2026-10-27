@@ -80,7 +80,10 @@ assert(conf_single[1].success == true, "configure single failed: " .. tostring(c
 
 local single_spec = env_mgr:get_target_mcp_spec("opencode_test", "github-mcp")
 assert(single_spec ~= nil, "expected spec found for github-mcp in opencode_test")
-assert(single_spec.env ~= nil and single_spec.env.GITHUB_PERSONAL_ACCESS_TOKEN == "ghp_secret_test_123", "missing env in single spec")
+assert(
+  single_spec.env ~= nil and single_spec.env.GITHUB_PERSONAL_ACCESS_TOKEN == "ghp_secret_test_123",
+  "missing env in single spec"
+)
 
 -- Verify other agents do not have it
 local anti_spec = env_mgr:get_target_mcp_spec("antigravity_test", "github-mcp")

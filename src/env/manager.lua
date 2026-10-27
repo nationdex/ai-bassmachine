@@ -486,10 +486,11 @@ function EnvManager:configure_mcp(server_name, updates, target_id)
       end
 
       -- Base standard spec either from existing raw_spec or new skeleton
-      local spec = normalize_server_spec(raw_spec) or {
-        command = updates.command or "npx",
-        args = updates.args or {},
-      }
+      local spec = normalize_server_spec(raw_spec)
+        or {
+          command = updates.command or "npx",
+          args = updates.args or {},
+        }
 
       -- Apply updates
       if updates.command ~= nil then

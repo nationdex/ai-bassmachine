@@ -212,7 +212,13 @@ function widgets.draw_modal_config_mcp(engine, title, server_name, target_name, 
   engine:draw_box(top_r, left_c, box_h, box_w, fg_border, bg, title)
 
   local subheader = string.format("Server: %s │ Target: %s", server_name, target_name)
-  engine:draw_text(top_r + 1, left_c + 3, term.truncate(subheader, box_w - 6), term.palette.fg_cyan .. term.colors.bold, bg)
+  engine:draw_text(
+    top_r + 1,
+    left_c + 3,
+    term.truncate(subheader, box_w - 6),
+    term.palette.fg_cyan .. term.colors.bold,
+    bg
+  )
 
   local list_top = top_r + 3
   local max_visible = box_h - 6

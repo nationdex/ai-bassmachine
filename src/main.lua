@@ -408,7 +408,7 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
               m.target_name = m.target_options[m.target_idx].name
               m:refresh()
             end
-          elseif (key == "a" or key == "A") then
+          elseif key == "a" or key == "A" then
             state.modal = {
               parent_config = m,
               type = "add_config_env",
@@ -416,7 +416,7 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
               prompt = "Format: KEY=VALUE (or KEY= to remove):",
               value = "",
             }
-          elseif (key == "d" or key == "D" or key == "delete") then
+          elseif key == "d" or key == "D" or key == "delete" then
             local sel = items[m.selected_idx or 1]
             if sel and sel.type == "env_var" and sel.env_key then
               m.spec.env[sel.env_key] = nil
@@ -424,7 +424,7 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
               m.selected_idx = math.max(1, (m.selected_idx or 1) - 1)
               state.status_msg = "Deleted env var " .. sel.env_key
             end
-          elseif (key == "s" or key == "S") then
+          elseif key == "s" or key == "S" then
             local sel_target = m.target_options[m.target_idx or 1]
             local tid = sel_target and sel_target.id or "all"
             local results = env_mgr:configure_mcp(m.server_name, m.spec, tid)
@@ -435,7 +435,12 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
               end
             end
             state.modal = nil
-            state.status_msg = string.format("Configured '%s' on %s (%d agent environment(s) updated).", m.server_name, sel_target.name, ok_cnt)
+            state.status_msg = string.format(
+              "Configured '%s' on %s (%d agent environment(s) updated).",
+              m.server_name,
+              sel_target.name,
+              ok_cnt
+            )
           elseif key == "enter" then
             local sel = items[m.selected_idx or 1]
             if sel then
@@ -645,11 +650,14 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
               end
               sname = sname or m.value:gsub("^%s+", ""):gsub("%s+$", "")
               sdesc = sdesc or ("Custom skill: " .. sname)
-              local content = string.format("---\nname: %s\ndescription: %s\n---\n\n# %s\n\n%s\n", sname, sdesc, sname, sdesc)
+              local content =
+                string.format("---\nname: %s\ndescription: %s\n---\n\n# %s\n\n%s\n", sname, sdesc, sname, sdesc)
               local res = skill_mgr:install_skill(sname, content, "all")
               local ok_c = 0
               for _, r in ipairs(res) do
-                if r.success then ok_c = ok_c + 1 end
+                if r.success then
+                  ok_c = ok_c + 1
+                end
               end
               state.status_msg = string.format("Created skill '%s' across %d agent environment(s).", sname, ok_c)
             end
@@ -857,12 +865,13 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
             if selected then
               local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
               local existing_spec = env_mgr:find_mcp_spec(sname) or env_mgr:find_mcp_spec(selected.id)
-              local spec = existing_spec or {
-                command = selected.command,
-                args = selected.args,
-                url = selected.url,
-                env = {},
-              }
+              local spec = existing_spec
+                or {
+                  command = selected.command,
+                  args = selected.args,
+                  url = selected.url,
+                  env = {},
+                }
               state.modal = build_mcp_config_modal(sname, spec, "all", env_mgr)
             end
           elseif active_tab_idx == 7 then
@@ -894,7 +903,7 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
             end
             state.status_msg = string.format("Installed '%s' across %d AI agent environments!", sname, ok_cnt)
           end
-        elseif (key == "/" and active_tab_idx == 3) then
+        elseif key == "/" and active_tab_idx == 3 then
           state.modal = {
             type = "search_skills",
             title = "Filter Agent Skills",
@@ -1038,7 +1047,9 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
               })
             end
           end
-          table.sort(provider_options, function(a, b) return a.id < b.id end)
+          table.sort(provider_options, function(a, b)
+            return a.id < b.id
+          end)
           local cur_prov = config:get("ai.default_provider", "zenmux")
           local init_idx = 1
           for idx, opt in ipairs(provider_options) do
@@ -1136,7 +1147,9 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
                   })
                 end
               end
-              table.sort(provider_options, function(a, b) return a.id < b.id end)
+              table.sort(provider_options, function(a, b)
+                return a.id < b.id
+              end)
               local cur_prov = config:get(s.key, "zenmux")
               local init_idx = 1
               for idx, opt in ipairs(provider_options) do
@@ -1266,10 +1279,16 @@ function app.main(args)
     local all_skills = skill_mgr:list_all()
     io.write(string.format("Discovered Agent Skills (%d found):\n\n", #all_skills))
     for _, sk in ipairs(all_skills) do
-      local in_agents = (sk.installed_in and #sk.installed_in > 0)
-        and table.concat(sk.installed_in, ", ")
-        or "none"
-      io.write(string.format("• \27[1;36m%-24s\27[0m [%s]\n  Desc: %s\n  Path: %s\n\n", sk.name, in_agents, sk.description or "None", sk.path or "custom"))
+      local in_agents = (sk.installed_in and #sk.installed_in > 0) and table.concat(sk.installed_in, ", ") or "none"
+      io.write(
+        string.format(
+          "• \27[1;36m%-24s\27[0m [%s]\n  Desc: %s\n  Path: %s\n\n",
+          sk.name,
+          in_agents,
+          sk.description or "None",
+          sk.path or "custom"
+        )
+      )
     end
     os.exit(0)
   elseif cmd == "skill-add" or cmd == "skill-create" then
@@ -1277,7 +1296,7 @@ function app.main(args)
     local sdesc = args[3] or "Custom skill"
     local target = args[4] or "all"
     if not sname then
-      io.write("Usage: ai-bassmachine skill-add <skill_name> \"[description]\" [target_agent|all]\n")
+      io.write('Usage: ai-bassmachine skill-add <skill_name> "[description]" [target_agent|all]\n')
       os.exit(1)
     end
     local content = string.format("---\nname: %s\ndescription: %s\n---\n\n# %s\n\n%s\n", sname, sdesc, sname, sdesc)
@@ -1378,8 +1397,8 @@ function app.main(args)
     if not sname or not env_pair then
       io.write("Usage: ai-bassmachine env-config <server_name> <KEY=VALUE> [target_agent_id|all]\n")
       io.write("Examples:\n")
-      io.write('  ai-bassmachine env-config github GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx all\n')
-      io.write('  ai-bassmachine env-config brave BRAVE_API_KEY=bsk_xxx antigravity\n')
+      io.write("  ai-bassmachine env-config github GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx all\n")
+      io.write("  ai-bassmachine env-config brave BRAVE_API_KEY=bsk_xxx antigravity\n")
       os.exit(1)
     end
     local ek, ev = env_pair:match("^([^=]+)=(.*)$")

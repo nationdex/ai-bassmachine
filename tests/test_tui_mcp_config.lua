@@ -64,7 +64,14 @@ local modal_items = {
   { type = "env_var", label = "Env: GITHUB_TOKEN", value = "ghp_test", masked = true },
 }
 
-widgets.draw_modal_config_mcp(engine, "Configure MCP: github", "github", "All Configured Agents (Broadcast)", modal_items, 1)
+widgets.draw_modal_config_mcp(
+  engine,
+  "Configure MCP: github",
+  "github",
+  "All Configured Agents (Broadcast)",
+  modal_items,
+  1
+)
 assert(engine.buffer[5] ~= nil, "expected modal rendered in buffer")
 
 -- Cleanup
