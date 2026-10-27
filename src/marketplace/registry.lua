@@ -14,6 +14,12 @@ function Registry.new(config)
   self.cached_at = 0
   self.is_fetching = false
   self:load_cache_from_disk()
+
+  -- If cache is empty on cold start, fetch live from registries immediately
+  if #self.cache == 0 then
+    self:refresh_marketplaces()
+  end
+
   return self
 end
 
