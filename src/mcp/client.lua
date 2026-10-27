@@ -1,7 +1,7 @@
 -- MCP Bass Machine - Model Context Protocol Client (JSON-RPC 2.0)
 -- Connects, performs handshake, lists capabilities/tools, and executes calls.
 
-local json = require("mcp-bassmachine.utils.json")
+local json = require("ai-bassmachine.utils.json")
 
 local McpClient = {}
 McpClient.__index = McpClient
@@ -91,7 +91,7 @@ function McpClient:initialize()
       prompts = { listChanged = true },
     },
     clientInfo = {
-      name = "mcp-bassmachine",
+      name = "ai-bassmachine",
       version = "0.1.0",
     },
   }

@@ -1,4 +1,4 @@
--- MCP Bass Machine - Type Definition Module (Teal)
+-- AI Bass Machine - Type Definition Module (Teal)
 
 global record McpToolInputSchema
   type: string
@@ -22,6 +22,16 @@ global record McpServerSpec
   args: {string}
   tags: {string}
   category: string
+end
+
+global record AgentSkill
+  name: string
+  dir_name: string
+  description: string
+  path: string
+  raw: string
+  body: string
+  installed_in: {string}
 end
 
 global record HistoryRecord
@@ -90,11 +100,22 @@ global record AgentTargetInfo
 end
 
 global record EnvManagerModule
-  new: function(): EnvManagerModule
+  new: function(config: any): EnvManagerModule
   get_targets: function(self: EnvManagerModule): {AgentTargetInfo}
   list_all: function(self: EnvManagerModule): {AgentTargetInfo}
   add_mcp: function(self: EnvManagerModule, server_name: string, spec: any, target: string): {any}
   remove_mcp: function(self: EnvManagerModule, server_name: string, target: string): {any}
+  configure_mcp: function(self: EnvManagerModule, server_name: string, updates: any, target: string): {any}
+  get_target_mcp_spec: function(self: EnvManagerModule, target_id: string, server_name: string): any
+end
+
+global record SkillManagerModule
+  new: function(config: any): SkillManagerModule
+  get_targets: function(self: SkillManagerModule): {any}
+  list_all: function(self: SkillManagerModule): {AgentSkill}
+  install_skill: function(self: SkillManagerModule, name: string, content: string, target: string): {any}
+  remove_skill: function(self: SkillManagerModule, name: string, target: string): {any}
+  sync_skill_to_all: function(self: SkillManagerModule, name: string): boolean, any
 end
 
 global record BassMachineModule

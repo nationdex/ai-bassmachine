@@ -1,8 +1,8 @@
-# MCP Bass Machine Configuration
+# AI Bass Machine Configuration
 # Hybrid TOML configuration: editable from TUI and dynamically loaded.
 
 [general]
-app_name = "MCP Bass Machine"
+app_name = "AI Bass Machine"
 log_level = "info"
 history_file = ".bassmachine_history.json"
 auto_clean_history = true
@@ -15,6 +15,10 @@ frame_rate = 30
 show_fps = false
 mouse_support = true
 bass_meter = true           # Animated bass equalizer visualizer in header
+
+[skills]
+auto_sync = false
+custom_directories = []
 
 [ai]
 default_provider = "zenmux" # zenmux | openrouter | openai | deepseek | ollama

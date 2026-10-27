@@ -1,7 +1,7 @@
 -- MCP Bass Machine - High Performance ANSI Terminal Engine
 -- Supports differential screen buffer rendering, animated bass visuals, and input loops.
 
-local term = require("mcp-bassmachine.utils.term")
+local term = require("ai-bassmachine.utils.term")
 
 local Engine = {}
 Engine.__index = Engine

@@ -1,6 +1,6 @@
-# MCP Bass Machine - Windows PowerShell Installer (Windows PowerShell 5.1 and PowerShell 7+)
+# AI Bass Machine - Windows PowerShell Installer (Windows PowerShell 5.1 and PowerShell 7+)
 # Usage:
-#   irm https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/nationdex/ai-bassmachine/main/install.ps1 | iex
 #
 # Notes for maintainers:
 #   * ASCII only: Windows PowerShell 5.1 reads BOM-less files as ANSI and mangles UTF-8 glyphs.
@@ -204,15 +204,15 @@ exit /b %MCPBASS_RC%
     [IO.File]::WriteAllText($Path, $content, (New-Object System.Text.ASCIIEncoding))
 }
 
-function Install-MCPBassMachine {
-    $RepoUrl = 'https://github.com/nationdex/mcp-bassmachine.git'
+function Install-AIBassMachine {
+    $RepoUrl = 'https://github.com/nationdex/ai-bassmachine.git'
     $UserHome = Get-UserHomeDir
-    $InstallDir = if ($env:MCP_BASSMACHINE_HOME) { $env:MCP_BASSMACHINE_HOME } else { Join-Path $UserHome '.mcp-bassmachine' }
-    $BinDir = if ($env:MCP_BASSMACHINE_BIN) { $env:MCP_BASSMACHINE_BIN } else { Join-Path $UserHome '.local\bin' }
-    $StandaloneLuaDir = Join-Path $UserHome '.mcp-bassmachine-lua\bin'
-    $Ref = if ($env:MCP_BASSMACHINE_REF) { $env:MCP_BASSMACHINE_REF } else { 'main' }
+    $InstallDir = if ($env:AI_BASSMACHINE_HOME) { $env:AI_BASSMACHINE_HOME } elseif ($env:MCP_BASSMACHINE_HOME) { $env:MCP_BASSMACHINE_HOME } else { Join-Path $UserHome '.ai-bassmachine' }
+    $BinDir = if ($env:AI_BASSMACHINE_BIN) { $env:AI_BASSMACHINE_BIN } elseif ($env:MCP_BASSMACHINE_BIN) { $env:MCP_BASSMACHINE_BIN } else { Join-Path $UserHome '.local\bin' }
+    $StandaloneLuaDir = Join-Path $UserHome '.ai-bassmachine-lua\bin'
+    $Ref = if ($env:AI_BASSMACHINE_REF) { $env:AI_BASSMACHINE_REF } elseif ($env:MCP_BASSMACHINE_REF) { $env:MCP_BASSMACHINE_REF } else { 'main' }
 
-    Write-Step 'Installing MCP Bass Machine for Windows...'
+    Write-Step 'Installing AI Bass Machine for Windows...'
 
     # 1. Git
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -246,30 +246,33 @@ function Install-MCPBassMachine {
         }
     }
 
-    # 4. Launcher in BinDir (also removes the old .ps1 wrapper that execution policy could block)
+    # 4. Launcher in BinDir (writes ai-bassmachine.cmd and backward-compatible mcp-bassmachine.cmd)
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-    $CmdWrapper = Join-Path $BinDir 'mcp-bassmachine.cmd'
+    $CmdWrapper = Join-Path $BinDir 'ai-bassmachine.cmd'
+    $LegacyCmdWrapper = Join-Path $BinDir 'mcp-bassmachine.cmd'
     New-CmdWrapper -Path $CmdWrapper -InstallDir $InstallDir -LuaPath $LuaPath
+    New-CmdWrapper -Path $LegacyCmdWrapper -InstallDir $InstallDir -LuaPath $LuaPath
+    Remove-Item (Join-Path $BinDir 'ai-bassmachine.ps1') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $BinDir 'mcp-bassmachine.ps1') -Force -ErrorAction SilentlyContinue
 
     # 5. PATH
     $null = Add-ToUserPath $BinDir
 
     Write-Host ''
-    Write-Step 'MCP Bass Machine installed successfully!' 'Green'
+    Write-Step 'AI Bass Machine installed successfully!' 'Green'
     Write-Step "Installed to:  $InstallDir"
     Write-Step "Launcher:      $CmdWrapper"
     Write-Host ''
     Write-Host 'Open a NEW terminal (Windows Terminal, PowerShell or cmd.exe) and run:' -ForegroundColor White
-    Write-Host '  mcp-bassmachine' -ForegroundColor Magenta
+    Write-Host '  ai-bassmachine' -ForegroundColor Magenta
     Write-Host 'Git Bash/mintty cannot deliver keyboard input to native Windows programs; use winpty there.' -ForegroundColor DarkGray
     Write-Host ''
 }
 
-# MCP_BASSMACHINE_NOEXEC=1 loads the functions without installing (used by tests/test_install_ps1.ps1)
-if (-not $env:MCP_BASSMACHINE_NOEXEC) {
+# AI_BASSMACHINE_NOEXEC=1 loads the functions without installing (used by tests/test_install_ps1.ps1)
+if (-not $env:AI_BASSMACHINE_NOEXEC -and -not $env:MCP_BASSMACHINE_NOEXEC) {
     try {
-        Install-MCPBassMachine
+        Install-AIBassMachine
     } catch {
         Write-Host ''
         Write-Host "Installation failed: $($_.Exception.Message)" -ForegroundColor Red

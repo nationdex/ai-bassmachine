@@ -1,8 +1,8 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local McpClient = require("mcp-bassmachine.mcp.client")
-local json = require("mcp-bassmachine.utils.json")
+local McpClient = require("ai-bassmachine.mcp.client")
+local json = require("ai-bassmachine.utils.json")
 
 -- Mock pipes for testing MCP JSON-RPC protocol
 local MockPipe = {}

@@ -1,9 +1,9 @@
 -- MCP Bass Machine - Hybrid Configuration Manager
 -- Loads, merges environment variables, provides runtime edits, and saves back to TOML.
 
-local toml = require("mcp-bassmachine.config.toml")
-local term = require("mcp-bassmachine.utils.term")
-local Secrets = require("mcp-bassmachine.config.secrets")
+local toml = require("ai-bassmachine.config.toml")
+local term = require("ai-bassmachine.utils.term")
+local Secrets = require("ai-bassmachine.config.secrets")
 
 local ConfigManager = {}
 ConfigManager.__index = ConfigManager

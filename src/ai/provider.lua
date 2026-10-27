@@ -1,62 +1,11 @@
 -- MCP Bass Machine - Multi-AI Provider & Tool Synthesis Engine
 -- Bridges MCP tools with ZenMux, Anthropic, Gemini, OpenAI, OpenRouter, DeepSeek, and Ollama.
 
-local json = require("mcp-bassmachine.utils.json")
-local term = require("mcp-bassmachine.utils.term")
+local json = require("ai-bassmachine.utils.json")
+local term = require("ai-bassmachine.utils.term")
 
 local AiProvider = {}
 AiProvider.__index = AiProvider
-
--- Default fallback models per provider when dynamic fetching is offline or unauthenticated
-AiProvider.DEFAULT_MODELS = {
-  zenmux = {
-    "deepseek/deepseek-v4.1-flash",
-    "deepseek/deepseek-chat",
-    "deepseek/deepseek-reasoner",
-    "anthropic/claude-3.5-sonnet",
-    "openai/gpt-4o",
-    "openai/gpt-4o-mini",
-    "google/gemini-2.0-flash",
-  },
-  openrouter = {
-    "anthropic/claude-3.5-sonnet",
-    "anthropic/claude-3.5-haiku",
-    "openai/gpt-4o",
-    "openai/gpt-4o-mini",
-    "google/gemini-2.0-flash",
-    "meta-llama/llama-3.3-70b-instruct",
-    "deepseek/deepseek-chat",
-  },
-  openai = {
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "o1",
-    "o1-mini",
-    "o3-mini",
-  },
-  anthropic = {
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229",
-  },
-  gemini = {
-    "gemini-2.0-flash",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
-  },
-  deepseek = {
-    "deepseek-chat",
-    "deepseek-reasoner",
-  },
-  ollama = {
-    "llama3:latest",
-    "mistral:latest",
-    "qwen2.5-coder:latest",
-    "phi3:latest",
-    "deepseek-r1:latest",
-  },
-}
 
 -- Escape a value for a double-quoted curl config (-K) string
 local function curl_cfg_quote(v)
@@ -192,11 +141,11 @@ function AiProvider:fetch_available_models(provider_name)
     end
   end
 
-  -- 2. Fall back to curated defaults if dynamic API query returned none
+  -- 2. Fall back to provider configured default model if dynamic API query returned none
   if #models == 0 then
-    local defaults = self.DEFAULT_MODELS[prov_id] or self.DEFAULT_MODELS.zenmux
-    for _, m in ipairs(defaults) do
-      table.insert(models, m)
+    local configured_model = prov.default_model or self.config:get("ai.default_model")
+    if configured_model and #configured_model > 0 then
+      table.insert(models, configured_model)
     end
   end
 
@@ -321,8 +270,8 @@ function AiProvider:chat_completion(messages, options)
     body = json.encode(payload)
     headers = {
       "Authorization: Bearer " .. api_key,
-      "HTTP-Referer: https://github.com/nationdex/mcp-bassmachine",
-      "X-Title: MCP Bass Machine",
+      "HTTP-Referer: https://github.com/nationdex/ai-bassmachine",
+      "X-Title: AI Bass Machine",
     }
   end
 
@@ -422,7 +371,7 @@ function AiProvider:synthesize_with_mcp(prompt, mcp_client, options)
   local messages = {
     {
       role = "system",
-      content = "You are MCP Bass Machine, an ultra-fast agent powered by Model Context Protocol tools.",
+      content = "You are AI Bass Machine, an ultra-fast agent powered by Model Context Protocol tools and Agent Skills.",
     },
     {
       role = "user",

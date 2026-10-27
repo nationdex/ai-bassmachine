@@ -2,13 +2,13 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local ConfigManager = require("mcp-bassmachine.config.manager")
-local HistoryManager = require("mcp-bassmachine.mcp.history")
-local EnvManager = require("mcp-bassmachine.env.manager")
-local Registry = require("mcp-bassmachine.marketplace.registry")
-local views = require("mcp-bassmachine.ui.views")
-local Engine = require("mcp-bassmachine.ui.engine")
-local widgets = require("mcp-bassmachine.ui.widgets")
+local ConfigManager = require("ai-bassmachine.config.manager")
+local HistoryManager = require("ai-bassmachine.mcp.history")
+local EnvManager = require("ai-bassmachine.env.manager")
+local Registry = require("ai-bassmachine.marketplace.registry")
+local views = require("ai-bassmachine.ui.views")
+local Engine = require("ai-bassmachine.ui.engine")
+local widgets = require("ai-bassmachine.ui.widgets")
 
 local config = ConfigManager.new()
 config:load()

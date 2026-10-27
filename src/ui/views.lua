@@ -1,9 +1,9 @@
 -- MCP Bass Machine - TUI Views & Screens
 -- Interactive screens for Marketplaces, Ephemeral Testing, AI Synthesis, History, and TOML Settings.
 
-local term = require("mcp-bassmachine.utils.term")
-local widgets = require("mcp-bassmachine.ui.widgets")
-local json = require("mcp-bassmachine.utils.json")
+local term = require("ai-bassmachine.utils.term")
+local widgets = require("ai-bassmachine.ui.widgets")
+local json = require("ai-bassmachine.utils.json")
 
 local views = {}
 
@@ -112,12 +112,20 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
     end
 
     local bottom_row = 3 + main_h
+    if bottom_row - 3 > r then
+      engine:draw_text(
+        bottom_row - 3,
+        right_col + 2,
+        term.truncate("Press [Enter] Ephemeral Run │ [I] Quick Install", right_w - 4),
+        term.palette.fg_magenta .. term.colors.bold
+      )
+    end
     if bottom_row - 2 > r then
       engine:draw_text(
         bottom_row - 2,
         right_col + 2,
-        term.truncate("Press [Enter] Ephemeral Run │ [I] Install to Agents", right_w - 4),
-        term.palette.fg_magenta .. term.colors.bold
+        term.truncate("Press [C] Configure MCP (Env Vars / API Keys / Target Agent)", right_w - 4),
+        term.palette.fg_cyan .. term.colors.bold
       )
     end
     if bottom_row - 1 > r then
@@ -132,8 +140,8 @@ function views.render_marketplaces(engine, registry, env_mgr, state)
       engine:draw_text(
         bottom_row,
         right_col + 2,
-        term.truncate("Press [/] Search │ [P] Filter Free/Paid │ [R] Sync (300+ MCPs)", right_w - 4),
-        term.palette.fg_cyan .. term.colors.bold
+        term.truncate("Press [/] Search │ [P] Filter Free/Paid │ [R] Sync", right_w - 4),
+        term.palette.fg_muted
       )
     end
   else
@@ -221,6 +229,121 @@ function views.render_test_workspace(engine, active_runner, state)
     else
       engine:draw_text(r, right_col + 4, "(Ready to execute. Press [Enter] / [X] to call tool)", term.palette.fg_muted)
     end
+  end
+end
+
+-- 3. Dynamic Agent Skills View
+function views.render_skills(engine, skill_mgr, state)
+  local width = engine.cols
+  local split_col = math.floor(width * 0.45)
+  local main_h = engine.rows - 5
+
+  local box_title = "Discovered Agent Skills"
+  if state.skill_query and #state.skill_query > 0 then
+    box_title = box_title .. " (Filter: " .. state.skill_query .. ")"
+  end
+  engine:draw_box(4, 2, main_h, split_col - 2, term.palette.border, term.palette.bg_dark, box_title)
+
+  local all_skills = skill_mgr:list_all()
+  local items = {}
+  if state.skill_query and #state.skill_query > 0 then
+    local q = state.skill_query:lower()
+    for _, sk in ipairs(all_skills) do
+      if sk.name:lower():find(q, 1, true) or sk.description:lower():find(q, 1, true) then
+        table.insert(items, sk)
+      end
+    end
+  else
+    items = all_skills
+  end
+  state.skills_items = items
+
+  local sel_idx = state.selected_skill_idx or 1
+  if sel_idx > #items then
+    sel_idx = math.max(1, #items)
+    state.selected_skill_idx = sel_idx
+  end
+
+  if #items == 0 then
+    engine:draw_text(6, 4, "No agent skills discovered.", term.palette.fg_muted)
+    engine:draw_text(8, 4, "Press [A] to add/import a new skill,", term.palette.fg_cyan)
+    engine:draw_text(9, 4, "or place a SKILL.md in ~/.agents/skills", term.palette.fg_muted)
+  else
+    widgets.draw_list(engine, items, sel_idx, 4, 2, main_h, split_col - 2, function(sk, _)
+      local count = sk.installed_in and #sk.installed_in or 0
+      local badge = string.format("[%d AGENTS]", count)
+      return string.format("%-10s %s", badge, sk.name)
+    end)
+  end
+
+  -- Right: Selected Skill Detail & Preview Card
+  local right_col = split_col + 1
+  local right_w = width - right_col
+  local selected = items[sel_idx]
+
+  engine:draw_box(4, right_col, main_h, right_w, term.palette.border, term.palette.bg_dark, "Skill Inspector (SKILL.md)")
+
+  if selected then
+    local r = 6
+    engine:draw_text(r, right_col + 2, "Skill:       " .. selected.name, term.palette.fg_cyan .. term.colors.bold)
+    r = r + 1
+    engine:draw_text(r, right_col + 2, "Directory:   " .. (selected.dir_name or selected.name), term.palette.fg_primary)
+    r = r + 1
+    local in_str = (selected.installed_in and #selected.installed_in > 0)
+      and table.concat(selected.installed_in, ", ")
+      or "none"
+    engine:draw_text(r, right_col + 2, "Agents:      " .. in_str, term.palette.fg_neon_green)
+    r = r + 1
+    engine:draw_text(r, right_col + 2, "Path:        " .. term.truncate(selected.path or "", right_w - 16), term.palette.fg_muted)
+    r = r + 2
+
+    engine:draw_text(r, right_col + 2, "Description:", term.palette.fg_primary .. term.colors.bold)
+    r = r + 1
+    engine:draw_text(r, right_col + 4, term.truncate(selected.description or "None", right_w - 8), term.palette.fg_muted)
+    r = r + 2
+
+    engine:draw_text(r, right_col + 2, "SKILL.md Content Preview:", term.palette.fg_amber .. term.colors.bold)
+    r = r + 1
+    local preview_text = selected.body or selected.raw or ""
+    local max_lines = main_h - (r - 4) - 4
+    local line_count = 0
+    for line in preview_text:gmatch("[^\r\n]+") do
+      if line_count < max_lines then
+        engine:draw_text(r, right_col + 4, term.truncate(line, right_w - 8), term.palette.fg_primary)
+        r = r + 1
+        line_count = line_count + 1
+      else
+        break
+      end
+    end
+
+    local bottom_row = 3 + main_h
+    if bottom_row - 2 > r then
+      engine:draw_text(
+        bottom_row - 2,
+        right_col + 2,
+        term.truncate("Press [S] Sync/Broadcast to ALL Agents │ [A] Create Skill", right_w - 4),
+        term.palette.fg_cyan .. term.colors.bold
+      )
+    end
+    if bottom_row - 1 > r then
+      engine:draw_text(
+        bottom_row - 1,
+        right_col + 2,
+        term.truncate("Press [D] / [Del] Remove from Agent Environments", right_w - 4),
+        term.palette.fg_red .. term.colors.bold
+      )
+    end
+    if bottom_row > r then
+      engine:draw_text(
+        bottom_row,
+        right_col + 2,
+        term.truncate("Press [/] Filter Skills", right_w - 4),
+        term.palette.fg_muted
+      )
+    end
+  else
+    engine:draw_text(6, right_col + 2, "Select a skill on the left or press [A] to add one.", term.palette.fg_muted)
   end
 end
 

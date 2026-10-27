@@ -1,7 +1,7 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local EnvManager = require("mcp-bassmachine.env.manager")
+local EnvManager = require("ai-bassmachine.env.manager")
 
 -- Test with isolated temporary paths
 local env_mgr = EnvManager.new()
@@ -67,6 +67,59 @@ local list_after = env_mgr:list_all()
 for _, target in ipairs(list_after) do
   assert(target.servers["test-git"] == nil, "expected test-git removed from " .. target.name)
 end
+
+-- 4. Test configure_mcp for single agent (OpenCode format)
+local conf_single = env_mgr:configure_mcp("github-mcp", {
+  command = "npx",
+  args = { "-y", "@modelcontextprotocol/server-github" },
+  env = { GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_secret_test_123" },
+}, "opencode_test")
+
+assert(#conf_single == 1, "expected 1 result for configure_mcp single agent")
+assert(conf_single[1].success == true, "configure single failed: " .. tostring(conf_single[1].error))
+
+local single_spec = env_mgr:get_target_mcp_spec("opencode_test", "github-mcp")
+assert(single_spec ~= nil, "expected spec found for github-mcp in opencode_test")
+assert(single_spec.env ~= nil and single_spec.env.GITHUB_PERSONAL_ACCESS_TOKEN == "ghp_secret_test_123", "missing env in single spec")
+
+-- Verify other agents do not have it
+local anti_spec = env_mgr:get_target_mcp_spec("antigravity_test", "github-mcp")
+assert(anti_spec == nil, "antigravity_test should not have github-mcp yet")
+
+-- 5. Test configure_mcp for all agents (broadcast)
+local conf_all = env_mgr:configure_mcp("github-mcp", {
+  command = "npx",
+  args = { "-y", "@modelcontextprotocol/server-github", "--verbose" },
+  env = {
+    GITHUB_PERSONAL_ACCESS_TOKEN = "ghp_broadcast_token_456",
+    DEBUG = "1",
+  },
+}, "all")
+
+assert(#conf_all == 3, "expected 3 results for broadcast configure_mcp")
+for _, r in ipairs(conf_all) do
+  assert(r.success == true, "broadcast configure failed on: " .. tostring(r.name))
+end
+
+for _, target in ipairs(env_mgr.targets) do
+  local spec_check = env_mgr:get_target_mcp_spec(target.id, "github-mcp")
+  assert(spec_check ~= nil, "missing github-mcp in " .. target.name)
+  assert(spec_check.env.GITHUB_PERSONAL_ACCESS_TOKEN == "ghp_broadcast_token_456", "token mismatch in " .. target.name)
+  assert(spec_check.env.DEBUG == "1", "debug flag mismatch in " .. target.name)
+end
+
+-- 6. Test updating env vars and deleting an env var (empty or false value)
+env_mgr:configure_mcp("github-mcp", {
+  env = {
+    DEBUG = "", -- delete
+    EXTRA_FLAG = "yes",
+  },
+}, "opencode_test")
+
+local updated_open_spec = env_mgr:get_target_mcp_spec("opencode_test", "github-mcp")
+assert(updated_open_spec.env.DEBUG == nil, "DEBUG should have been deleted")
+assert(updated_open_spec.env.EXTRA_FLAG == "yes", "EXTRA_FLAG should be present")
+assert(updated_open_spec.env.GITHUB_PERSONAL_ACCESS_TOKEN == "ghp_broadcast_token_456", "token preserved")
 
 -- Cleanup
 os.remove(tmp_anti)

@@ -3,8 +3,8 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local term = require("mcp-bassmachine.utils.term")
-local McpRunner = require("mcp-bassmachine.mcp.runner")
+local term = require("ai-bassmachine.utils.term")
+local McpRunner = require("ai-bassmachine.mcp.runner")
 
 local interpreter = arg and arg[-1] or "lua"
 local command = string.format('"%s" tests/fixtures/fake_mcp_server.lua', interpreter)

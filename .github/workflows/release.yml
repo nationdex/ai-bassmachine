@@ -20,11 +20,11 @@ jobs:
 
       - name: Create Release Tarball
         run: |
-          tar -czvf mcp-bassmachine-${{ github.ref_name }}.tar.gz bin/ src/ types/ bassmachine.toml LICENSE README.md
+          tar -czvf ai-bassmachine-${{ github.ref_name }}.tar.gz bin/ src/ types/ bassmachine.toml LICENSE README.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
         with:
-          files: mcp-bassmachine-${{ github.ref_name }}.tar.gz
+          files: ai-bassmachine-${{ github.ref_name }}.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

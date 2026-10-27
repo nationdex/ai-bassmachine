@@ -1,19 +1,27 @@
--- MCP Bass Machine - API key store
+-- AI Bass Machine - API key store
 -- Keys entered in the TUI live here, outside the project checkout (so a git add can never pick them
 -- up) in a user-only file. Environment variables still take precedence over this store.
 
-local json = require("mcp-bassmachine.utils.json")
-local term = require("mcp-bassmachine.utils.term")
+local json = require("ai-bassmachine.utils.json")
+local term = require("ai-bassmachine.utils.term")
 
 local Secrets = {}
 
--- MCP_BASSMACHINE_SECRETS overrides the location (used by tests and for custom setups)
+-- AI_BASSMACHINE_SECRETS / MCP_BASSMACHINE_SECRETS overrides location (used by tests and for custom setups)
 function Secrets.path()
-  local override = os.getenv("MCP_BASSMACHINE_SECRETS")
+  local override = os.getenv("AI_BASSMACHINE_SECRETS") or os.getenv("MCP_BASSMACHINE_SECRETS")
   if override and #override > 0 then
     return override
   end
-  return term.get_home_dir() .. "/.config/mcp-bassmachine/secrets.json"
+  local home = term.get_home_dir()
+  local modern_path = home .. "/.config/ai-bassmachine/secrets.json"
+  local legacy_path = home .. "/.config/mcp-bassmachine/secrets.json"
+  local lf = io.open(legacy_path, "r")
+  if lf then
+    lf:close()
+    return legacy_path
+  end
+  return modern_path
 end
 
 function Secrets.load()

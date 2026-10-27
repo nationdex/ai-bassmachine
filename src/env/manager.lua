@@ -6,15 +6,15 @@
 -- 4. Cursor IDE (~/.config/Cursor/User/mcp.json)
 -- 5. VS Code & Insiders (~/.config/Code/User/mcp.json, ~/.config/Code - Insiders/User/mcp.json)
 
-local json = require("mcp-bassmachine.utils.json")
-local term = require("mcp-bassmachine.utils.term")
+local json = require("ai-bassmachine.utils.json")
+local term = require("ai-bassmachine.utils.term")
 
 local EnvManager = {}
 EnvManager.__index = EnvManager
 
 local get_home_dir = term.get_home_dir
 
-local function build_target_agents()
+local function build_target_agents(config)
   local home = get_home_dir()
   local appdata = os.getenv("APPDATA")
   if appdata then
@@ -26,7 +26,7 @@ local function build_target_agents()
   local vscode_insiders_path = appdata and (appdata .. "/Code - Insiders/User/mcp.json")
     or (home .. "/.config/Code - Insiders/User/mcp.json")
 
-  return {
+  local targets = {
     {
       id = "antigravity",
       name = "Antigravity (Global)",
@@ -70,10 +70,31 @@ local function build_target_agents()
       format = "standard_mcp",
     },
   }
+
+  -- Merge dynamically configured agents from config if provided
+  if config and config.get then
+    local custom_agents = config:get("agents")
+    if custom_agents and type(custom_agents) == "table" then
+      for aid, adata in pairs(custom_agents) do
+        if type(adata) == "table" and adata.path then
+          table.insert(targets, {
+            id = aid,
+            name = adata.name or aid,
+            path = adata.path:gsub("^~", home),
+            format = adata.format or "standard_mcp",
+          })
+        end
+      end
+    end
+  end
+
+  return targets
 end
-function EnvManager.new()
+
+function EnvManager.new(config)
   local self = setmetatable({}, EnvManager)
-  self.targets = build_target_agents()
+  self.config = config
+  self.targets = build_target_agents(config)
   return self
 end
 
@@ -251,20 +272,27 @@ function EnvManager:list_all()
 end
 
 -- Find existing spec of an installed MCP server across all agents
-function EnvManager:find_mcp_spec(server_name)
+function EnvManager:find_mcp_spec(server_name, target_id)
   local summary = self:list_all()
   local target_sname = server_name:lower()
 
   for _, target in ipairs(summary) do
-    if target.servers then
-      for sname, raw_spec in pairs(target.servers) do
-        if sname:lower() == target_sname or sname:lower():gsub("[^%w]", "") == target_sname:gsub("[^%w]", "") then
-          return normalize_server_spec(raw_spec), sname, target
+    if not target_id or target_id == "all" or target.id == target_id then
+      if target.servers then
+        for sname, raw_spec in pairs(target.servers) do
+          if sname:lower() == target_sname or sname:lower():gsub("[^%w]", "") == target_sname:gsub("[^%w]", "") then
+            return normalize_server_spec(raw_spec), sname, target
+          end
         end
       end
     end
   end
   return nil, nil, nil
+end
+
+-- Get normalized spec from a specific target agent
+function EnvManager:get_target_mcp_spec(target_id, server_name)
+  return self:find_mcp_spec(server_name, target_id)
 end
 
 -- Check presence of an MCP across each agent environment
@@ -406,6 +434,115 @@ function EnvManager:remove_mcp(server_name, target_id)
           })
         end
       end
+    end
+  end
+
+  return results
+end
+
+-- Update / configure specific fields of an MCP (env vars, args, command, url, headers)
+-- for a specific target agent or "all"
+function EnvManager:configure_mcp(server_name, updates, target_id)
+  local results = {}
+  if not updates or type(updates) ~= "table" then
+    return results
+  end
+
+  for _, target in ipairs(self.targets) do
+    if not target_id or target_id == "all" or target.id == target_id then
+      local data, _ = read_json_file(target.path)
+      if not data then
+        data = {}
+      end
+
+      local raw_spec = nil
+      local actual_name = server_name
+      if target.format == "opencode" then
+        if data.mcp and type(data.mcp) == "table" then
+          raw_spec = data.mcp[server_name]
+          if not raw_spec then
+            for sn, sp in pairs(data.mcp) do
+              if sn:lower() == server_name:lower() then
+                raw_spec = sp
+                actual_name = sn
+                break
+              end
+            end
+          end
+        end
+      else
+        if data.mcpServers and type(data.mcpServers) == "table" then
+          raw_spec = data.mcpServers[server_name]
+          if not raw_spec then
+            for sn, sp in pairs(data.mcpServers) do
+              if sn:lower() == server_name:lower() then
+                raw_spec = sp
+                actual_name = sn
+                break
+              end
+            end
+          end
+        end
+      end
+
+      -- Base standard spec either from existing raw_spec or new skeleton
+      local spec = normalize_server_spec(raw_spec) or {
+        command = updates.command or "npx",
+        args = updates.args or {},
+      }
+
+      -- Apply updates
+      if updates.command ~= nil then
+        spec.command = updates.command
+      end
+      if updates.args ~= nil then
+        spec.args = updates.args
+      end
+      if updates.url ~= nil then
+        spec.url = updates.url
+      end
+      if updates.headers ~= nil then
+        spec.headers = updates.headers
+      end
+
+      -- Environment variables update / merge / deletion
+      if updates.env ~= nil then
+        spec.env = spec.env or {}
+        for ek, ev in pairs(updates.env) do
+          if ev == false or ev == "" then
+            spec.env[ek] = nil
+          else
+            spec.env[ek] = tostring(ev)
+          end
+        end
+        if next(spec.env) == nil then
+          spec.env = nil
+        end
+      end
+
+      local formatted = format_server_for_target(target.format, spec)
+
+      if target.format == "opencode" then
+        if not data.mcp or type(data.mcp) ~= "table" then
+          data.mcp = {}
+        end
+        data.mcp[actual_name] = formatted
+      else
+        if not data.mcpServers or type(data.mcpServers) ~= "table" then
+          data.mcpServers = {}
+        end
+        data.mcpServers[actual_name] = formatted
+      end
+
+      local ok, werr = write_json_file(target.path, data)
+      table.insert(results, {
+        target = target.id,
+        name = target.name,
+        path = target.path,
+        success = ok,
+        error = werr,
+        spec = spec,
+      })
     end
   end
 

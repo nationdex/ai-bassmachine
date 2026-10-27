@@ -1,7 +1,7 @@
 -- MCP Bass Machine - TUI Widgets
 -- Component library for tabs, lists, details panels, status bars, modals, and bass visualizers.
 
-local term = require("mcp-bassmachine.utils.term")
+local term = require("ai-bassmachine.utils.term")
 
 local widgets = {}
 
@@ -17,7 +17,7 @@ function widgets.draw_header(engine, active_tab_name, active_model, bass_meter_e
     engine.buffer[2][c].bg = bg
   end
 
-  local title = " 🎛  MCP BASS MACHINE "
+  local title = " 🎛  AI BASS MACHINE "
   engine:draw_text(1, 2, title, term.palette.fg_cyan .. term.colors.bold, bg)
 
   if bass_meter_enabled ~= false then
@@ -198,6 +198,58 @@ function widgets.draw_modal_select(engine, title, prompt, items, selected_idx)
 
   local hint = "[↑/↓] Select │ [Enter] Choose │ [Esc] Cancel"
   engine:draw_text(top_r + box_h - 1, left_c + 3, term.truncate(hint, box_w - 6), term.palette.fg_muted, bg)
+end
+
+function widgets.draw_modal_config_mcp(engine, title, server_name, target_name, items, selected_idx)
+  local box_w = math.min(78, engine.cols - 4)
+  local box_h = math.min(engine.rows - 4, 18)
+  local top_r = math.floor((engine.rows - box_h) / 2)
+  local left_c = math.floor((engine.cols - box_w) / 2)
+
+  local bg = term.palette.bg_card
+  local fg_border = term.palette.border_focus
+
+  engine:draw_box(top_r, left_c, box_h, box_w, fg_border, bg, title)
+
+  local subheader = string.format("Server: %s │ Target: %s", server_name, target_name)
+  engine:draw_text(top_r + 1, left_c + 3, term.truncate(subheader, box_w - 6), term.palette.fg_cyan .. term.colors.bold, bg)
+
+  local list_top = top_r + 3
+  local max_visible = box_h - 6
+  selected_idx = math.max(1, math.min(#items, selected_idx or 1))
+
+  local scroll_offset = 0
+  if selected_idx > max_visible then
+    scroll_offset = selected_idx - max_visible
+  end
+
+  for i = 1, math.min(#items - scroll_offset, max_visible) do
+    local idx = i + scroll_offset
+    local itm = items[idx]
+    local is_sel = (idx == selected_idx)
+    local r = list_top + (i - 1)
+
+    local prefix = is_sel and "► " or "  "
+    local line_label = string.format("%-18s: ", itm.label)
+    local val_str = tostring(itm.value or "(empty)")
+    if itm.masked and val_str ~= "(empty)" and #val_str > 0 then
+      val_str = string.rep("*", math.min(12, #val_str))
+    end
+
+    local fg = is_sel and (term.palette.fg_neon_green .. term.colors.bold) or term.palette.fg_primary
+    local item_bg = is_sel and term.palette.bg_highlight or term.palette.bg_dark
+
+    for c = left_c + 2, left_c + box_w - 3 do
+      engine.buffer[r][c].char = " "
+      engine.buffer[r][c].bg = item_bg
+    end
+
+    local content = prefix .. line_label .. val_str
+    engine:draw_text(r, left_c + 3, term.truncate(content, box_w - 6), fg, item_bg)
+  end
+
+  local hint = "[↑/↓] Select │ [Enter] Edit Value │ [D] Del Key │ [S] Save & Apply │ [Esc] Close"
+  engine:draw_text(top_r + box_h - 2, left_c + 3, term.truncate(hint, box_w - 6), term.palette.fg_muted, bg)
 end
 
 return widgets

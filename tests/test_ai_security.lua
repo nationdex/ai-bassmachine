@@ -1,9 +1,9 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local term = require("mcp-bassmachine.utils.term")
-local ConfigManager = require("mcp-bassmachine.config.manager")
-local AiProvider = require("mcp-bassmachine.ai.provider")
+local term = require("ai-bassmachine.utils.term")
+local ConfigManager = require("ai-bassmachine.config.manager")
+local AiProvider = require("ai-bassmachine.ai.provider")
 
 local KEY = "sk-FAKE-security-key-0987654321"
 

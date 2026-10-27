@@ -50,7 +50,7 @@ jobs:
 
       - name: Typecheck (Teal)
         run: |
-          tl check types/mcp_bassmachine.d.tl
+          tl check types/ai_bassmachine.d.tl
 
   test-matrix:
     name: Test on Lua ${{ matrix.lua-version }}
@@ -77,6 +77,8 @@ jobs:
           lua tests/test_history.lua
           lua tests/test_mcp_protocol.lua
           lua tests/test_env_manager.lua
+          lua tests/test_skills_manager.lua
+          lua tests/test_tui_mcp_config.lua
           lua tests/test_config_secrets.lua
           lua tests/test_ai_security.lua
           lua tests/test_ai_zenmux.lua
@@ -89,9 +91,10 @@ jobs:
 
       - name: Verify CLI Entrypoint
         run: |
-          chmod +x bin/mcp-bassmachine
-          ./bin/mcp-bassmachine list
-          ./bin/mcp-bassmachine check-config
+          chmod +x bin/ai-bassmachine bin/mcp-bassmachine
+          ./bin/ai-bassmachine list
+          ./bin/ai-bassmachine check-config
+          ./bin/ai-bassmachine skills
 
   test-windows:
     name: Test on Windows (${{ matrix.shell }})

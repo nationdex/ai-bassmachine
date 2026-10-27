@@ -1,7 +1,7 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local HistoryManager = require("mcp-bassmachine.mcp.history")
+local HistoryManager = require("ai-bassmachine.mcp.history")
 
 local tmp_history_file = "/tmp/test_bass_history.json"
 os.remove(tmp_history_file)

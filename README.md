@@ -1,11 +1,11 @@
-# MCP Bass Machine
+# AI Bass Machine
 
-An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, test, benchmark, and run Model Context Protocol (MCP) servers across multiple marketplaces.
+An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, configure, test, benchmark, and sync Model Context Protocol (MCP) servers and Agent Skills across all AI agent environments.
 
 ```
- 🎛  MCP BASS MACHINE  [ ▂▃▄▅▆▇█]                   AI: deepseek/deepseek-v4.1-flash │ Tab: Marketplaces
+ 🎛  AI BASS MACHINE  [ ▂▃▄▅▆▇█]                   AI: deepseek/deepseek-v4.1-flash │ Tab: Marketplaces
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1:Marketplaces   2:Test & Run   3:AI Synth   4:History   5:Settings
+ 1:Marketplaces   2:Test & Run   3:Skills   4:AI Synth   5:History   6:Settings   7:Agent Sync
 ┌ Marketplace Catalog ──────────────────┐┌ Package Specs & Zero-Install Preview ─────────────────────────┐
 │ [OFFICIAL]   mcp-filesystem           ││ Package:     Filesystem MCP                                    │
 │ [OFFICIAL]   mcp-fetch                ││ Registry:    official                                          │
@@ -18,7 +18,7 @@ An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, test
 │ [AWESOME-MCP]mcp-github               ││ Description: Secure direct filesystem access with configurable │
 │ [SMITHERY]   mcp-puppeteer            ││ read/write boundaries.                                         │
 └───────────────────────────────────────┘└────────────────────────────────────────────────────────────────┘
- [1-5] Tabs │ [↑/↓] Navigate │ [C] Clean │ [S] Save TOML │ [Q] Quit
+ [1-7] Tabs │ [↑/↓] Navigate │ [Enter] Run │ [C] Config │ [S] Save TOML │ [Q] Quit
 ```
 
 ---
@@ -26,10 +26,12 @@ An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, test
 ## Highlights
 
 - **Pure Lua & Zero C Dependencies**: Runs seamlessly across Lua 5.1, 5.2, 5.3, 5.4, and LuaJIT with zero compilation step.
+- **Agent Skills Discovery & Sync**: Real-time discovery, inspection, and syncing of Agent Skills (`SKILL.md`) across all AI agents (`~/.agents/skills`, `~/.claude/skills`, `~/.config/opencode/skills`, or any custom configured directory).
+- **Interactive MCP Configuration**: Configure arguments, environment variables, API keys, and remote URLs per agent or broadcast to all agents directly in the TUI (`[C]`).
 - **Zero-Install Ephemeral Execution**: MCP servers run on-demand via isolated FIFO coprocesses (`npx -y`, `uvx`, docker). No global npm or python environment pollution.
 - **Auto-Cleaning History**: Every execution session is tracked in an ephemeral history ledger with execution duration, tool count, and status. Automatically purges old records or cleans on-demand.
-- **Multi-Marketplace Hub**: Real-time discovery aggregating servers from official Model Context Protocol registries, Smithery.ai, Glama, and Awesome-MCP.
-- **Universal AI Agent Environment Sync**: One-key install or removal of MCP servers across all local AI agent environments: **Antigravity**, **OpenCode**, **Claude (Code & Desktop)**, **Cursor IDE**, **VS Code**, and **VS Code Insiders** with format auto-translation.
+- **Multi-Marketplace Hub**: Dynamic discovery aggregating servers from official Model Context Protocol registries and awesome-mcp repositories with zero hardcoded catalogs.
+- **Universal AI Agent Environment Sync**: One-key install or removal of MCP servers and Skills across all local AI agent environments with schema auto-translation.
 - **Hybrid TOML Engine**: Pure Lua TOML parser and serializer. Edit configurations directly in the TUI with live file sync and environment variable interpolation (`${ENV_VAR}`).
 - **Native Multi-AI Synthesis**: Direct tool-calling integration with ZenMux, OpenRouter, DeepSeek, and local LLM endpoints (Ollama/vLLM). The AI receives MCP tool schemas and executes live tool invocations.
 - **Strict Quality Pipeline**: Stylua formatting, Luacheck linting, and Teal (`tl`) typechecked definitions.
@@ -42,61 +44,70 @@ An ultra-fast, zero-dependency Lua 5.X ANSI terminal workspace to discover, test
 
 #### Linux & macOS (cURL / Bash)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nationdex/ai-bassmachine/main/install.sh | bash
 ```
 
 #### Windows (PowerShell 5.1 or 7+)
 ```powershell
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.ps1 | iex
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://raw.githubusercontent.com/nationdex/ai-bassmachine/main/install.ps1 | iex
 ```
-The installer reuses a working Lua that ships its DLL, otherwise installs a SHA256-pinned Lua 5.4.2, and writes a single `mcp-bassmachine.cmd` launcher (works in cmd.exe, PowerShell 5.1 and 7). Open a **new** terminal afterwards.
-
-- Run it in Windows Terminal, PowerShell or cmd.exe. **Git Bash/mintty** does not expose a Windows console to native programs; prefix with `winpty` there.
-- MCP servers launch through the native helper in `bin/windows/` (rebuild with `scripts/build-wincon.sh`, needs mingw-w64). Node-based servers (`npx ...`) need Node.js on PATH.
+The installer writes `ai-bassmachine.cmd` (and `mcp-bassmachine.cmd` for compatibility) into your user path.
 
 ---
 
 ### Manual Clone
 
 ```bash
-git clone https://github.com/nationdex/mcp-bassmachine.git
-cd mcp-bassmachine
+git clone https://github.com/nationdex/ai-bassmachine.git
+cd ai-bassmachine
 
 # Launch interactive TUI
-./bin/mcp-bassmachine
+./bin/ai-bassmachine
 ```
 
 ### CLI Mode
 ```bash
-# Run preflight verification test (verifies TOML, history, marketplaces, and ZenMux AI)
-./bin/mcp-bassmachine test
+# Run preflight verification test
+./bin/ai-bassmachine test
+
+# Discover and list Agent Skills across environments
+./bin/ai-bassmachine skills
+
+# Create or install an Agent Skill to all agents (or specify target)
+./bin/ai-bassmachine skill-add my-skill "Quick code reviewer skill" all
+
+# Broadcast / sync a skill to all agents
+./bin/ai-bassmachine skill-sync my-skill
 
 # Run an MCP server ephemerally and introspect tools
-./bin/mcp-bassmachine run "npx -y @modelcontextprotocol/server-filesystem /tmp"
+./bin/ai-bassmachine run "npx -y @modelcontextprotocol/server-filesystem /tmp"
+
+# Configure an MCP server's environment variable (e.g. API key) across agents
+./bin/ai-bassmachine env-config github GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx all
 
 # List indexed MCPs across marketplaces
-./bin/mcp-bassmachine list
+./bin/ai-bassmachine list
 
 # Inspect ephemeral run history
-./bin/mcp-bassmachine history
+./bin/ai-bassmachine history
 
 # Clear session history
-./bin/mcp-bassmachine clean-history
+./bin/ai-bassmachine clean-history
 
 # Check active TOML configuration
-./bin/mcp-bassmachine check-config
+./bin/ai-bassmachine check-config
 
-# Inspect MCP servers across all AI agent environments (Antigravity, OpenCode, Claude, Cursor, VS Code)
-./bin/mcp-bassmachine env-list
+# Inspect MCP servers across all AI agent environments
+./bin/ai-bassmachine env-list
 
-# Broadcast/Install an existent MCP across ALL AI agents (if it's only present in one or two)
-./bin/mcp-bassmachine env-sync uizze
+# Broadcast/Install an existent MCP across ALL AI agents
+./bin/ai-bassmachine env-sync uizze
 
-# Install an MCP server into all AI agents at once (or specify target: antigravity | opencode | claude | all)
-./bin/mcp-bassmachine env-add my-server "uvx mcp-server-git --repository /tmp" all
+# Install an MCP server into all AI agents at once (or specify target)
+./bin/ai-bassmachine env-add my-server "uvx mcp-server-git --repository /tmp" all
 
 # Remove an MCP server from all AI agents
-./bin/mcp-bassmachine env-remove my-server all
+./bin/ai-bassmachine env-remove my-server all
 ```
 
 ---
@@ -141,9 +152,9 @@ default_model = "anthropic/claude-3.5-sonnet"
 ### Setting or changing an API key
 
 - **In the TUI:** Settings (tab 5) -> pick the AI service, then the **API Key** row -> `Enter`, paste the key (it is hidden while typing). Empty + `Enter` removes it. The row shows only a masked value and where it came from.
-- **Where it is stored:** `~/.config/mcp-bassmachine/secrets.json` (`%USERPROFILE%\.config\mcp-bassmachine\secrets.json` on Windows), outside the project folder, mode 600 on Linux/macOS. On Windows it relies on your user profile's permissions, not encryption.
+- **Where it is stored:** `~/.config/ai-bassmachine/secrets.json` (`%USERPROFILE%\.config\ai-bassmachine\secrets.json` on Windows), outside the project folder, mode 600 on Linux/macOS. On Windows it relies on your user profile's permissions, not encryption.
 - **Precedence:** environment variable (`ZENMUX_API_KEY`, ...) > secrets file. The TUI tells you when an env var is overriding a stored key.
-- **CLI:** `mcp-bassmachine keys` lists each provider's source and masked key; `mcp-bassmachine clear-key <provider>` removes a stored key.
+- **CLI:** `ai-bassmachine keys` lists each provider's source and masked key; `ai-bassmachine clear-key <provider>` removes a stored key.
 - **Rotating a leaked key:** revoke it at the provider, remove any old `ZENMUX_API_KEY` environment variable, then set the new one as above. A plaintext key found in `bassmachine.toml` (older versions wrote it there) is removed automatically on startup.
 
 ### API key safety
@@ -151,28 +162,28 @@ default_model = "anthropic/claude-3.5-sonnet"
 - Keys live in environment variables (`ZENMUX_API_KEY`, `OPENAI_API_KEY`, ...). `bassmachine.toml` keeps only `${ENV_VAR}` placeholders; `save()` never writes a resolved key and rewrites any literal key back to a placeholder.
 - Requests go through a private (mode 600) curl config file, so keys never appear in `ps` output or URLs.
 - Enable the secret-scan pre-commit hook once per clone: `git config core.hooksPath .githooks`. CI runs `scripts/secret-scan.sh` too.
-- Pin installs with `MCP_BASSMACHINE_REF=<tag> curl ... | bash`.
+- Pin installs with `AI_BASSMACHINE_REF=<tag> curl ... | bash`.
 
 ## TUI Keyboard Navigation
 
 | Key | Action |
 |---|---|
-| `1` - `6` | Switch active tab (Marketplaces, Test & Run, AI Synth, History, Settings, Agent Sync) |
+| `1` - `7` | Switch active tab (Marketplaces, Test & Run, Skills, AI Synth, History, Settings, Agent Sync) |
 | `Tab` | Cycle next tab |
 | `↑` / `↓` | Navigate list items and menu options |
-| `Enter` | Launch ephemeral run (Tab 1), Trigger AI synthesis (Tab 3) |
-| `I` | Install selected Marketplace MCP to ALL AI Agents (Antigravity, OpenCode, Claude, etc.) |
-| `/` | Live Search / Keyword Filter for marketplace MCP listing (Tab 1) |
+| `Enter` | Launch ephemeral run (Tab 1), Trigger AI synthesis (Tab 4), Edit Setting (Tab 6) |
+| `C` | Configure MCP arguments & environment variables (Tab 1 & Tab 7) |
+| `I` | Quick install selected Marketplace MCP to ALL AI Agents (Tab 1) |
+| `/` | Live search / keyword filter for MCPs (Tab 1) or Skills (Tab 3) |
 | `P` | Toggle Free / Paid MCP filter in Marketplace (Tab 1) |
-| `S` / `B` | Broadcast / Install selected existent MCP to ALL AI agents (Tab 6: Agent Sync) |
-| `D` | Remove selected MCP from active agent (Tab 6: Agent Sync) |
-| `U` | Remove/Purge selected MCP from ALL AI agents (Tab 6: Agent Sync) |
-| `A` | Add a custom MCP to active agent (Tab 6: Agent Sync) |
+| `S` | Sync/Broadcast selected MCP (Tab 7) or Skill (Tab 3) across all agents; Save TOML (Tab 6) |
+| `A` | Add/Create custom MCP (Tab 7) or Agent Skill (Tab 3) |
+| `D` | Remove selected MCP or Skill from agent environment(s) |
+| `U` | Remove/Purge selected MCP from ALL AI agents (Tab 7: Agent Sync) |
 | `R` | Sync live MCP marketplaces across Official, Punkpeye, Wong2, and Appcypher (Tab 1) |
-| `Space` | Toggle boolean values in Settings (Tab 5) |
-| `C` | Clean all ephemeral session history (Tab 4) |
-| `X` | Clean stale sessions older than retention limit (Tab 4) |
-| `S` | Write and synchronize modified settings to `bassmachine.toml` (Tab 5) |
+| `Space` | Toggle boolean values in Settings (Tab 6) |
+| `C` | Clean all ephemeral session history (Tab 5) |
+| `X` | Clean stale sessions older than retention limit (Tab 5) |
 | `Q` / `Ctrl+C` | Gracefully quit and restore terminal state |
 
 ---
@@ -208,33 +219,42 @@ lua tests/test_ai_zenmux.lua
 ## Architecture
 
 ```
-mcp-bassmachine/
+ai-bassmachine/
 ├── bin/
-│   └── mcp-bassmachine             # Executable launcher
+│   ├── ai-bassmachine              # Primary executable launcher
+│   └── mcp-bassmachine             # Compatibility wrapper
 ├── src/
 │   ├── main.lua                    # TUI & CLI entrypoint
 │   ├── loader.lua                  # Cross-version module searcher
 │   ├── config/
 │   │   ├── toml.lua                # Pure Lua TOML parser & encoder
-│   │   └── manager.lua             # Hybrid runtime configuration manager
+│   │   ├── manager.lua             # Hybrid runtime configuration manager
+│   │   └── secrets.lua             # Isolated user secrets store
+│   ├── skills/
+│   │   └── manager.lua             # Dynamic Agent Skills discovery & sync
 │   ├── mcp/
 │   │   ├── client.lua              # JSON-RPC 2.0 MCP client
 │   │   ├── runner.lua              # Ephemeral FIFO coprocess runner
 │   │   └── history.lua             # Session tracker with auto-cleanup
 │   ├── marketplace/
-│   │   └── registry.lua            # Multi-registry aggregator & search
+│   │   └── registry.lua            # Dynamic multi-registry aggregator & search
+│   ├── env/
+│   │   └── manager.lua             # Multi-agent environment sync & config
 │   ├── ai/
-│   │   └── provider.lua            # Multi-AI synthesis (ZenMux, OpenRouter)
+│   │   └── provider.lua            # Multi-AI synthesis (ZenMux, OpenRouter, etc.)
 │   ├── ui/
 │   │   ├── engine.lua              # ANSI terminal engine & bass visualizer
 │   │   ├── widgets.lua             # Reusable UI component library
-│   │   └── views.lua               # Views (Marketplaces, Test, AI, History, TOML)
+│   │   └── views.lua               # Views (Marketplaces, Test, Skills, AI, History, TOML, Agent Sync)
 │   └── utils/
 │       ├── json.lua                # Pure Lua JSON parser/encoder
 │       └── term.lua                # ANSI sequences, raw mode, keyboard events
 ├── types/
-│   └── mcp_bassmachine.d.tl        # Teal type definitions
+│   └── ai_bassmachine.d.tl         # Teal type definitions
 ├── tests/
+│   ├── test_skills_manager.lua
+│   ├── test_env_manager.lua
+│   ├── test_tui_mcp_config.lua
 │   ├── test_json.lua
 │   ├── test_toml.lua
 │   ├── test_history.lua
@@ -247,7 +267,7 @@ mcp-bassmachine/
 ├── stylua.toml                     # Stylua rules
 ├── .luacheckrc                     # Luacheck linter configuration
 ├── tlconfig.json                   # Teal typechecker configuration
-└── mcp-bassmachine-0.1.0-1.rockspec # LuaRocks package definition
+└── ai-bassmachine-0.1.0-1.rockspec # LuaRocks package definition
 ```
 
 ---

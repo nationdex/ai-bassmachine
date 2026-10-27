@@ -3,10 +3,10 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local ConfigManager = require("mcp-bassmachine.config.manager")
-local views = require("mcp-bassmachine.ui.views")
-local Engine = require("mcp-bassmachine.ui.engine")
-local widgets = require("mcp-bassmachine.ui.widgets")
+local ConfigManager = require("ai-bassmachine.config.manager")
+local views = require("ai-bassmachine.ui.views")
+local Engine = require("ai-bassmachine.ui.engine")
+local widgets = require("ai-bassmachine.ui.widgets")
 
 local KEY = "sk-FAKE-screen-key-QWERTY998877"
 local secrets_path = os.tmpname()

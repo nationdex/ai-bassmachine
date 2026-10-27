@@ -24,19 +24,19 @@ if ($text -match 'merge --ff-only') { throw 'ff-only merge fails on shallow chec
 if ($text -notmatch 'FETCH_HEAD') { throw 'update must move the checkout to FETCH_HEAD' }
 
 # 4. Load functions without installing
-$env:MCP_BASSMACHINE_NOEXEC = '1'
+$env:AI_BASSMACHINE_NOEXEC = '1'
 . $script
-Remove-Item Env:MCP_BASSMACHINE_NOEXEC
+Remove-Item Env:AI_BASSMACHINE_NOEXEC
 
 # 5. Wrapper: launches Lua exactly once, propagates exit code, restores code page
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("bassmachine-wrapper-" + [Guid]::NewGuid().ToString('N') + '.cmd')
-New-CmdWrapper -Path $tmp -InstallDir 'C:\Users\Jane Doe\.mcp-bassmachine' -LuaPath 'C:\Users\Jane Doe\.mcp-bassmachine-lua\bin\lua54.exe'
+New-CmdWrapper -Path $tmp -InstallDir 'C:\Users\Jane Doe\.ai-bassmachine' -LuaPath 'C:\Users\Jane Doe\.ai-bassmachine-lua\bin\lua54.exe'
 $wrapper = [IO.File]::ReadAllText($tmp)
 Remove-Item $tmp -Force
 $luaCalls = ([regex]::Matches($wrapper, 'src\\main\.lua')).Count
 if ($luaCalls -ne 1) { throw "wrapper launches Lua $luaCalls times (expected 1)" }
 if ($wrapper -notmatch 'exit /b %MCPBASS_RC%') { throw 'wrapper does not propagate exit code' }
-if ($wrapper -notmatch 'cd /d "C:\\Users\\Jane Doe\\.mcp-bassmachine"') { throw 'wrapper must quote install dir' }
+if ($wrapper -notmatch 'cd /d "C:\\Users\\Jane Doe\\.ai-bassmachine"') { throw 'wrapper must quote install dir' }
 if ($wrapper -notmatch "`r`n") { throw 'wrapper must use CRLF' }
 if ($wrapper -match 'powershell') { throw 'wrapper must not shell out to powershell' }
 

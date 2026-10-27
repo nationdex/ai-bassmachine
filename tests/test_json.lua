@@ -1,7 +1,7 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local json = require("mcp-bassmachine.utils.json")
+local json = require("ai-bassmachine.utils.json")
 
 local function assert_eq(a, b, msg)
   if a ~= b then

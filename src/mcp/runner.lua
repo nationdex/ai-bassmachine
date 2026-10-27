@@ -1,8 +1,8 @@
 -- MCP Bass Machine - Ephemeral MCP Process Runner
 -- Spawns MCP processes interactively via Linux FIFOs with zero permanent install.
 
-local McpClient = require("mcp-bassmachine.mcp.client")
-local term = require("mcp-bassmachine.utils.term")
+local McpClient = require("ai-bassmachine.mcp.client")
+local term = require("ai-bassmachine.utils.term")
 
 local McpRunner = {}
 McpRunner.__index = McpRunner

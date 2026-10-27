@@ -1,7 +1,7 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local toml = require("mcp-bassmachine.config.toml")
+local toml = require("ai-bassmachine.config.toml")
 
 local sample = [[
 # Main configuration

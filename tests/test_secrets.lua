@@ -2,8 +2,8 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local Secrets = require("mcp-bassmachine.config.secrets")
-local ConfigManager = require("mcp-bassmachine.config.manager")
+local Secrets = require("ai-bassmachine.config.secrets")
+local ConfigManager = require("ai-bassmachine.config.manager")
 
 local function tmp(name)
   return os.tmpname() .. name

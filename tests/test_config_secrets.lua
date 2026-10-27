@@ -1,7 +1,7 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local ConfigManager = require("mcp-bassmachine.config.manager")
+local ConfigManager = require("ai-bassmachine.config.manager")
 
 local FAKE_KEY = "sk-FAKE-regression-key-1234567890"
 local path = os.tmpname()

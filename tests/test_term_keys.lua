@@ -2,7 +2,7 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local term = require("mcp-bassmachine.utils.term")
+local term = require("ai-bassmachine.utils.term")
 
 -- Helper to inject chunks into term's internal parser via test hook
 local function test_parse(_input)

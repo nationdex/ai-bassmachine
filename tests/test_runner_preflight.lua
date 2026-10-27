@@ -1,7 +1,7 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local McpRunner = require("mcp-bassmachine.mcp.runner")
+local McpRunner = require("ai-bassmachine.mcp.runner")
 
 -- A program that cannot exist must fail fast with a hint, without spawning anything
 local runner = McpRunner.new("npx-definitely-not-installed-xyz -y pkg")

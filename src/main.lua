@@ -1,25 +1,26 @@
--- MCP Bass Machine - Main Application Entrypoint
--- Pure Lua 5.X TUI & CLI suite to test and run MCPs across multiple marketplaces.
+-- AI Bass Machine - Main Application Entrypoint
+-- Pure Lua 5.X TUI & CLI suite to test and run MCPs & Agent Skills across multiple environments.
 
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local term = require("mcp-bassmachine.utils.term")
-local Engine = require("mcp-bassmachine.ui.engine")
-local widgets = require("mcp-bassmachine.ui.widgets")
-local views = require("mcp-bassmachine.ui.views")
-local ConfigManager = require("mcp-bassmachine.config.manager")
-local Registry = require("mcp-bassmachine.marketplace.registry")
-local HistoryManager = require("mcp-bassmachine.mcp.history")
-local McpRunner = require("mcp-bassmachine.mcp.runner")
-local AiProvider = require("mcp-bassmachine.ai.provider")
-local EnvManager = require("mcp-bassmachine.env.manager")
-local json = require("mcp-bassmachine.utils.json")
+local term = require("ai-bassmachine.utils.term")
+local Engine = require("ai-bassmachine.ui.engine")
+local widgets = require("ai-bassmachine.ui.widgets")
+local views = require("ai-bassmachine.ui.views")
+local ConfigManager = require("ai-bassmachine.config.manager")
+local Registry = require("ai-bassmachine.marketplace.registry")
+local HistoryManager = require("ai-bassmachine.mcp.history")
+local McpRunner = require("ai-bassmachine.mcp.runner")
+local AiProvider = require("ai-bassmachine.ai.provider")
+local EnvManager = require("ai-bassmachine.env.manager")
+local SkillManager = require("ai-bassmachine.skills.manager")
+local json = require("ai-bassmachine.utils.json")
 
 local app = {}
 
 function app.run_cli_test(config, history, ai)
-  io.write("\27[1;36m🎛  MCP Bass Machine - Pre-flight Verification\27[0m\n")
+  io.write("\27[1;36m🎛  AI Bass Machine - Pre-flight Verification\27[0m\n")
   io.write("=====================================================\n")
 
   -- 1. Test TOML Configuration
@@ -81,12 +82,12 @@ function app.run_cli_test(config, history, ai)
   end
 
   io.write("=====================================================\n")
-  io.write("\27[1;32m✓ All MCP Bass Machine systems operational.\27[0m\n")
+  io.write("\27[1;32m✓ All AI Bass Machine systems operational.\27[0m\n")
   return true
 end
 
 function app.run_cli_ephemeral_mcp(command_str, _config, history)
-  io.write("\27[1;36m🎛  MCP Bass Machine - Ephemeral Runner\27[0m\n")
+  io.write("\27[1;36m🎛  AI Bass Machine - Ephemeral Runner\27[0m\n")
   io.write("Target: " .. command_str .. "\n")
   io.write("Initializing zero-install execution...\n")
 
@@ -133,7 +134,105 @@ function app.run_cli_ephemeral_mcp(command_str, _config, history)
   return true
 end
 
-function app.run_tui(config, history, registry, ai, env_mgr)
+-- Helper: Build dynamic MCP configuration modal state for an agent or all agents
+local function build_mcp_config_modal(server_name, initial_spec, target_id, env_mgr)
+  local targets = env_mgr:get_targets()
+  local target_options = {
+    { id = "all", name = "All Configured Agents (Broadcast)" },
+  }
+  for _, t in ipairs(targets) do
+    table.insert(target_options, { id = t.id, name = t.name })
+  end
+
+  local cur_target_idx = 1
+  if target_id and target_id ~= "all" then
+    for idx, opt in ipairs(target_options) do
+      if opt.id == target_id then
+        cur_target_idx = idx
+        break
+      end
+    end
+  end
+
+  local spec = {
+    command = initial_spec and initial_spec.command or "npx",
+    args = (initial_spec and initial_spec.args) and { table.unpack(initial_spec.args) } or {},
+    url = initial_spec and initial_spec.url or nil,
+    env = {},
+  }
+  if initial_spec and initial_spec.env then
+    for ek, ev in pairs(initial_spec.env) do
+      spec.env[ek] = tostring(ev)
+    end
+  end
+
+  local function refresh_items(self_modal)
+    local items = {}
+    local sel_target = target_options[self_modal.target_idx or 1]
+    table.insert(items, {
+      type = "target_agent",
+      label = "Target Agent",
+      value = sel_target and sel_target.name or "All Agents",
+    })
+    table.insert(items, {
+      type = "command",
+      label = "Command",
+      value = self_modal.spec.command or "(none)",
+    })
+    local args_str = #self_modal.spec.args > 0 and table.concat(self_modal.spec.args, " ") or "(none)"
+    table.insert(items, {
+      type = "args",
+      label = "Arguments",
+      value = args_str,
+    })
+    table.insert(items, {
+      type = "url",
+      label = "Remote URL",
+      value = self_modal.spec.url or "(none)",
+    })
+
+    -- Add existing environment variables
+    local env_keys = {}
+    for ek in pairs(self_modal.spec.env) do
+      table.insert(env_keys, ek)
+    end
+    table.sort(env_keys)
+    for _, ek in ipairs(env_keys) do
+      local is_secret = ek:match("KEY") or ek:match("TOKEN") or ek:match("SECRET") or ek:match("PASS")
+      table.insert(items, {
+        type = "env_var",
+        env_key = ek,
+        label = "Env: " .. ek,
+        value = self_modal.spec.env[ek],
+        masked = is_secret ~= nil,
+      })
+    end
+
+    table.insert(items, {
+      type = "add_env_action",
+      label = "[+ Add Env Var]",
+      value = "Press Enter to add KEY=VALUE / API Key",
+    })
+
+    self_modal.items = items
+  end
+
+  local modal = {
+    is_config = true,
+    title = "Configure MCP: " .. server_name,
+    server_name = server_name,
+    target_options = target_options,
+    target_idx = cur_target_idx,
+    spec = spec,
+    selected_idx = 1,
+    refresh = refresh_items,
+  }
+  refresh_items(modal)
+  modal.target_name = target_options[modal.target_idx].name
+  return modal
+end
+
+function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
   term.enter_raw_mode()
 
   -- Windows console diagnostics: tell the user why keys may not work instead of hanging silently
@@ -152,23 +251,25 @@ function app.run_tui(config, history, registry, ai, env_mgr)
   end
 
   local engine = Engine.new(config:get("ui.frame_rate", 30))
-  local tabs = { "Marketplaces", "Test & Run", "AI Synth", "History", "Settings", "Agent Sync" }
+  local tabs = { "Marketplaces", "Test & Run", "Skills", "AI Synth", "History", "Settings", "Agent Sync" }
   local active_tab_idx = 1
 
   local state = {
     selected_mcp_idx = 1,
     selected_tool_idx = 1,
+    selected_skill_idx = 1,
     selected_history_idx = 1,
     selected_setting_idx = 1,
     selected_target_idx = 1,
     selected_env_server_idx = 1,
     search_query = "",
+    skill_query = "",
     pricing_filter = "All",
     ai_prompt = "Hello! Test MCP tool integration with deepseek/deepseek-v4.1-flash",
     ai_response = nil,
     status_msg = win_warning
       or (config.notices and config.notices[1])
-      or "Welcome to MCP Bass Machine. Multi-Agent Sync ready.",
+      or "Welcome to AI Bass Machine. Multi-Agent & Skills Sync ready.",
     active_runner = nil,
     modal = nil,
   }
@@ -195,18 +296,29 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     elseif active_tab_idx == 2 then
       views.render_test_workspace(engine, state.active_runner, state)
     elseif active_tab_idx == 3 then
-      views.render_ai_synth(engine, config, state)
+      views.render_skills(engine, skill_mgr, state)
     elseif active_tab_idx == 4 then
-      views.render_history(engine, history, state)
+      views.render_ai_synth(engine, config, state)
     elseif active_tab_idx == 5 then
-      views.render_settings(engine, config, state)
+      views.render_history(engine, history, state)
     elseif active_tab_idx == 6 then
+      views.render_settings(engine, config, state)
+    elseif active_tab_idx == 7 then
       views.render_env_manager(engine, env_mgr, state)
     end
 
     -- 4. Draw Modal Overlay if active
     if state.modal then
-      if state.modal.is_select then
+      if state.modal.is_config then
+        widgets.draw_modal_config_mcp(
+          engine,
+          state.modal.title,
+          state.modal.server_name,
+          state.modal.target_name,
+          state.modal.items or {},
+          state.modal.selected_idx or 1
+        )
+      elseif state.modal.is_select then
         widgets.draw_modal_select(
           engine,
           state.modal.title,
@@ -227,23 +339,27 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     end
 
     -- 5. Draw Status Bar
-    local hotkeys = "[1-6] Tabs │ [↑/↓] Navigate │ [Enter] Select/Run │ [Q] Quit"
+    local hotkeys = "[1-7] Tabs │ [↑/↓] Navigate │ [Enter] Select/Run │ [Q] Quit"
     if active_tab_idx == 1 then
-      hotkeys = "[Enter] Run │ [I] Install │ [/] Search │ [P] Free/Paid │ [D] Del"
+      hotkeys = "[Enter] Run │ [I] Install │ [C] Config │ [/] Search │ [P] Filter │ [D] Del"
     elseif active_tab_idx == 2 then
       hotkeys = "[X] Call Tool │ [R] Spawn Runner │ [K] Stop Runner"
     elseif active_tab_idx == 3 then
-      hotkeys = "[Enter] Synthesize │ [P] Service │ [M] Model │ [E] Prompt"
+      hotkeys = "[S] Sync All │ [A] Create Skill │ [D] Remove │ [/] Search"
     elseif active_tab_idx == 4 then
-      hotkeys = "[C] Clean All │ [X] Purge >24h"
+      hotkeys = "[Enter] Synthesize │ [P] Service │ [M] Model │ [E] Prompt"
     elseif active_tab_idx == 5 then
-      hotkeys = "[Enter]/[E] Edit │ [Space] Toggle │ [S] Save TOML"
+      hotkeys = "[C] Clean All │ [X] Purge >24h"
     elseif active_tab_idx == 6 then
-      hotkeys = "[←/→] Agent │ [S]/[B] Sync to All │ [A] Add │ [D] Remove │ [U] Purge All"
+      hotkeys = "[Enter]/[E] Edit │ [Space] Toggle │ [S] Save TOML"
+    elseif active_tab_idx == 7 then
+      hotkeys = "[←/→] Agent │ [C] Config │ [S] Sync All │ [A] Add │ [D] Remove │ [U] Purge"
     end
 
     if state.modal then
-      if state.modal.is_select then
+      if state.modal.is_config then
+        hotkeys = "[↑/↓] Select │ [Enter] Edit │ [A] Add Env │ [D] Del │ [S] Apply │ [Esc] Close"
+      elseif state.modal.is_select then
         hotkeys = "[↑/↓] Navigate │ [Enter] Select │ [Esc] Cancel"
       else
         hotkeys = "[Enter] Confirm │ [Esc] Cancel │ [Backspace] Edit"
@@ -273,7 +389,107 @@ function app.run_tui(config, history, registry, ai, env_mgr)
     for _, key in ipairs(keys) do
       -- If inside a modal input or selection dialog, capture keys
       if state.modal then
-        if state.modal.is_select then
+        if state.modal.is_config then
+          local m = state.modal
+          local items = m.items or {}
+          if key == "esc" or key == "double_esc" or key == "ctrl_c" then
+            state.modal = nil
+            state.status_msg = "Configuration closed."
+          elseif key == "up" then
+            m.selected_idx = math.max(1, (m.selected_idx or 1) - 1)
+          elseif key == "down" then
+            m.selected_idx = math.min(#items, (m.selected_idx or 1) + 1)
+          elseif key == "left" or key == "right" then
+            local sel = items[m.selected_idx or 1]
+            if sel and sel.type == "target_agent" then
+              local dir = (key == "right") and 1 or -1
+              local n_opts = #m.target_options
+              m.target_idx = ((m.target_idx - 1 + dir + n_opts) % n_opts) + 1
+              m.target_name = m.target_options[m.target_idx].name
+              m:refresh()
+            end
+          elseif (key == "a" or key == "A") then
+            state.modal = {
+              parent_config = m,
+              type = "add_config_env",
+              title = "Add Environment Variable (" .. m.server_name .. ")",
+              prompt = "Format: KEY=VALUE (or KEY= to remove):",
+              value = "",
+            }
+          elseif (key == "d" or key == "D" or key == "delete") then
+            local sel = items[m.selected_idx or 1]
+            if sel and sel.type == "env_var" and sel.env_key then
+              m.spec.env[sel.env_key] = nil
+              m:refresh()
+              m.selected_idx = math.max(1, (m.selected_idx or 1) - 1)
+              state.status_msg = "Deleted env var " .. sel.env_key
+            end
+          elseif (key == "s" or key == "S") then
+            local sel_target = m.target_options[m.target_idx or 1]
+            local tid = sel_target and sel_target.id or "all"
+            local results = env_mgr:configure_mcp(m.server_name, m.spec, tid)
+            local ok_cnt = 0
+            for _, res in ipairs(results) do
+              if res.success then
+                ok_cnt = ok_cnt + 1
+              end
+            end
+            state.modal = nil
+            state.status_msg = string.format("Configured '%s' on %s (%d agent environment(s) updated).", m.server_name, sel_target.name, ok_cnt)
+          elseif key == "enter" then
+            local sel = items[m.selected_idx or 1]
+            if sel then
+              if sel.type == "target_agent" then
+                -- Cycle targets
+                m.target_idx = (m.target_idx % #m.target_options) + 1
+                m.target_name = m.target_options[m.target_idx].name
+                m:refresh()
+              elseif sel.type == "command" then
+                state.modal = {
+                  parent_config = m,
+                  type = "edit_config_command",
+                  title = "Edit Command (" .. m.server_name .. ")",
+                  prompt = "Enter executable/runner (e.g. npx, uvx, node):",
+                  value = m.spec.command or "",
+                }
+              elseif sel.type == "args" then
+                state.modal = {
+                  parent_config = m,
+                  type = "edit_config_args",
+                  title = "Edit Arguments (" .. m.server_name .. ")",
+                  prompt = "Enter space-separated arguments:",
+                  value = #m.spec.args > 0 and table.concat(m.spec.args, " ") or "",
+                }
+              elseif sel.type == "url" then
+                state.modal = {
+                  parent_config = m,
+                  type = "edit_config_url",
+                  title = "Edit Remote URL (" .. m.server_name .. ")",
+                  prompt = "Enter remote SSE/HTTP URL (or empty for local command):",
+                  value = m.spec.url or "",
+                }
+              elseif sel.type == "env_var" then
+                state.modal = {
+                  parent_config = m,
+                  type = "edit_config_env_val",
+                  env_key = sel.env_key,
+                  title = "Edit Value for " .. sel.env_key,
+                  prompt = "Enter value (leave empty to delete):",
+                  value = m.spec.env[sel.env_key] or "",
+                  masked = sel.masked,
+                }
+              elseif sel.type == "add_env_action" then
+                state.modal = {
+                  parent_config = m,
+                  type = "add_config_env",
+                  title = "Add Environment Variable (" .. m.server_name .. ")",
+                  prompt = "Format: KEY=VALUE (or KEY= to remove):",
+                  value = "",
+                }
+              end
+            end
+          end
+        elseif state.modal.is_select then
           local items = state.modal.items or {}
           if key == "esc" or key == "double_esc" or key == "ctrl_c" then
             state.modal = nil
@@ -310,7 +526,71 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           state.status_msg = "Editing cancelled."
         elseif key == "enter" then
           local m = state.modal
-          if m.type == "edit_setting" then
+          local keep_modal = false
+          if m.type == "edit_config_command" then
+            if m.parent_config then
+              m.parent_config.spec.command = (#m.value > 0) and m.value or "npx"
+              m.parent_config:refresh()
+              state.modal = m.parent_config
+              state.status_msg = "Updated command."
+              keep_modal = true
+            end
+          elseif m.type == "edit_config_args" then
+            if m.parent_config then
+              local new_args = {}
+              for part in m.value:gmatch("%S+") do
+                table.insert(new_args, part)
+              end
+              m.parent_config.spec.args = new_args
+              m.parent_config:refresh()
+              state.modal = m.parent_config
+              state.status_msg = "Updated arguments."
+              keep_modal = true
+            end
+          elseif m.type == "edit_config_url" then
+            if m.parent_config then
+              m.parent_config.spec.url = (#m.value > 0) and m.value or nil
+              m.parent_config:refresh()
+              state.modal = m.parent_config
+              state.status_msg = "Updated remote URL."
+              keep_modal = true
+            end
+          elseif m.type == "edit_config_env_val" then
+            if m.parent_config and m.env_key then
+              if #m.value == 0 then
+                m.parent_config.spec.env[m.env_key] = nil
+                state.status_msg = "Removed " .. m.env_key
+              else
+                m.parent_config.spec.env[m.env_key] = m.value
+                state.status_msg = "Updated " .. m.env_key
+              end
+              m.parent_config:refresh()
+              state.modal = m.parent_config
+              keep_modal = true
+            end
+          elseif m.type == "add_config_env" then
+            if m.parent_config and #m.value > 0 then
+              local ek, ev = m.value:match("^([^=]+)=(.*)$")
+              if ek then
+                ek = ek:gsub("^%s+", ""):gsub("%s+$", "")
+                ev = ev:gsub("^%s+", ""):gsub("%s+$", "")
+                if #ev == 0 then
+                  m.parent_config.spec.env[ek] = nil
+                  state.status_msg = "Removed env var " .. ek
+                else
+                  m.parent_config.spec.env[ek] = ev
+                  state.status_msg = "Added env var " .. ek
+                end
+              else
+                local ek_trimmed = m.value:gsub("^%s+", ""):gsub("%s+$", "")
+                m.parent_config.spec.env[ek_trimmed] = ""
+                state.status_msg = "Added key " .. ek_trimmed
+              end
+              m.parent_config:refresh()
+              state.modal = m.parent_config
+              keep_modal = true
+            end
+          elseif m.type == "edit_setting" then
             local val = m.value
             local s = m.setting
             if s.type == "number" then
@@ -353,6 +633,26 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             state.search_query = m.value
             state.selected_mcp_idx = 1
             state.status_msg = #m.value > 0 and ("Filter applied: " .. m.value) or "Search filter cleared."
+          elseif m.type == "search_skills" then
+            state.skill_query = m.value
+            state.selected_skill_idx = 1
+            state.status_msg = #m.value > 0 and ("Skills filter: " .. m.value) or "Skills filter cleared."
+          elseif m.type == "add_skill" then
+            if #m.value > 0 then
+              local sname, sdesc = m.value:match("^([^%s=:]+)%s*[=:]%s*(.+)$")
+              if not sname then
+                sname, sdesc = m.value:match("^([^%s]+)%s+(.+)$")
+              end
+              sname = sname or m.value:gsub("^%s+", ""):gsub("%s+$", "")
+              sdesc = sdesc or ("Custom skill: " .. sname)
+              local content = string.format("---\nname: %s\ndescription: %s\n---\n\n# %s\n\n%s\n", sname, sdesc, sname, sdesc)
+              local res = skill_mgr:install_skill(sname, content, "all")
+              local ok_c = 0
+              for _, r in ipairs(res) do
+                if r.success then ok_c = ok_c + 1 end
+              end
+              state.status_msg = string.format("Created skill '%s' across %d agent environment(s).", sname, ok_c)
+            end
           elseif m.type == "edit_prompt" then
             state.ai_prompt = m.value
             state.status_msg = "Updated AI prompt."
@@ -413,7 +713,9 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               end
             end
           end
-          state.modal = nil
+          if not keep_modal then
+            state.modal = nil
+          end
         elseif key == "backspace" then
           local v = state.modal.value
           if #v > 0 then
@@ -440,6 +742,8 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           active_tab_idx = 5
         elseif key == "6" then
           active_tab_idx = 6
+        elseif key == "7" then
+          active_tab_idx = 7
         elseif key == "tab" then
           active_tab_idx = (active_tab_idx % #tabs) + 1
         elseif key == "up" then
@@ -447,11 +751,13 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             state.selected_mcp_idx = math.max(1, state.selected_mcp_idx - 1)
           elseif active_tab_idx == 2 then
             state.selected_tool_idx = math.max(1, state.selected_tool_idx - 1)
-          elseif active_tab_idx == 4 then
-            state.selected_history_idx = math.max(1, state.selected_history_idx - 1)
+          elseif active_tab_idx == 3 then
+            state.selected_skill_idx = math.max(1, (state.selected_skill_idx or 1) - 1)
           elseif active_tab_idx == 5 then
-            state.selected_setting_idx = math.max(1, state.selected_setting_idx - 1)
+            state.selected_history_idx = math.max(1, state.selected_history_idx - 1)
           elseif active_tab_idx == 6 then
+            state.selected_setting_idx = math.max(1, state.selected_setting_idx - 1)
+          elseif active_tab_idx == 7 then
             state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
           end
         elseif key == "down" then
@@ -461,21 +767,24 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           elseif active_tab_idx == 2 then
             local max_t = #(state.active_tools or {})
             state.selected_tool_idx = math.min(max_t > 0 and max_t or 1, state.selected_tool_idx + 1)
-          elseif active_tab_idx == 4 then
+          elseif active_tab_idx == 3 then
+            local max_sk = #(state.skills_items or {})
+            state.selected_skill_idx = math.min(max_sk > 0 and max_sk or 1, (state.selected_skill_idx or 1) + 1)
+          elseif active_tab_idx == 5 then
             local max_h = #(state.history_items or {})
             state.selected_history_idx = math.min(max_h > 0 and max_h or 1, state.selected_history_idx + 1)
-          elseif active_tab_idx == 5 then
+          elseif active_tab_idx == 6 then
             local max_s = #(state.settings_keys or {})
             state.selected_setting_idx = math.min(max_s > 0 and max_s or 1, state.selected_setting_idx + 1)
-          elseif active_tab_idx == 6 then
+          elseif active_tab_idx == 7 then
             local max_srv = #(state.current_target_servers or {})
             state.selected_env_server_idx =
               math.min(max_srv > 0 and max_srv or 1, (state.selected_env_server_idx or 1) + 1)
           end
-        elseif key == "left" and active_tab_idx == 6 then
+        elseif key == "left" and active_tab_idx == 7 then
           state.selected_target_idx = math.max(1, (state.selected_target_idx or 1) - 1)
           state.selected_env_server_idx = 1
-        elseif key == "right" and active_tab_idx == 6 then
+        elseif key == "right" and active_tab_idx == 7 then
           local max_tgt = #(state.env_targets or {})
           state.selected_target_idx = math.min(max_tgt > 0 and max_tgt or 1, (state.selected_target_idx or 1) + 1)
           state.selected_env_server_idx = 1
@@ -541,6 +850,31 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               state.status_msg = "Launch failed: " .. tostring(client_or_err)
             end
           end
+        elseif (key == "c" or key == "C") and (active_tab_idx == 1 or active_tab_idx == 7) then
+          if active_tab_idx == 1 then
+            local items = state.marketplace_items or {}
+            local selected = items[state.selected_mcp_idx or 1]
+            if selected then
+              local sname = selected.name:lower():gsub("%s+", "-"):gsub("[^%w_%-]", "")
+              local existing_spec = env_mgr:find_mcp_spec(sname) or env_mgr:find_mcp_spec(selected.id)
+              local spec = existing_spec or {
+                command = selected.command,
+                args = selected.args,
+                url = selected.url,
+                env = {},
+              }
+              state.modal = build_mcp_config_modal(sname, spec, "all", env_mgr)
+            end
+          elseif active_tab_idx == 7 then
+            local targets = state.env_targets or {}
+            local cur_target = targets[state.selected_target_idx or 1]
+            local s_keys = state.current_target_servers or {}
+            local cur_srv = s_keys[state.selected_env_server_idx or 1]
+            if cur_target and cur_srv then
+              local spec = env_mgr:get_target_mcp_spec(cur_target.id, cur_srv) or {}
+              state.modal = build_mcp_config_modal(cur_srv, spec, cur_target.id, env_mgr)
+            end
+          end
         elseif (key == "i" or key == "I") and active_tab_idx == 1 then
           -- Install selected marketplace MCP to all environments
           local items = state.marketplace_items or {}
@@ -560,11 +894,44 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             end
             state.status_msg = string.format("Installed '%s' across %d AI agent environments!", sname, ok_cnt)
           end
+        elseif (key == "/" and active_tab_idx == 3) then
+          state.modal = {
+            type = "search_skills",
+            title = "Filter Agent Skills",
+            prompt = "Enter search keyword (or empty to clear):",
+            value = state.skill_query or "",
+          }
+        elseif (key == "a" or key == "A") and active_tab_idx == 3 then
+          state.modal = {
+            type = "add_skill",
+            title = "Create / Import Agent Skill",
+            prompt = "Format: <name> <description>",
+            value = "",
+          }
+        elseif (key == "s" or key == "S") and active_tab_idx == 3 then
+          local skills = state.skills_items or {}
+          local cur_sk = skills[state.selected_skill_idx or 1]
+          if cur_sk then
+            local ok, s_err = skill_mgr:sync_skill_to_all(cur_sk.name)
+            if ok then
+              state.status_msg = string.format("Synced skill '%s' across all agent environments!", cur_sk.name)
+            else
+              state.status_msg = "Skill sync failed: " .. tostring(s_err)
+            end
+          end
+        elseif (key == "d" or key == "D" or key == "delete") and active_tab_idx == 3 then
+          local skills = state.skills_items or {}
+          local cur_sk = skills[state.selected_skill_idx or 1]
+          if cur_sk then
+            skill_mgr:remove_skill(cur_sk.name, "all")
+            state.status_msg = string.format("Removed skill '%s' from all agent environments.", cur_sk.name)
+            state.selected_skill_idx = math.max(1, (state.selected_skill_idx or 1) - 1)
+          end
         elseif
           (key == "d" or key == "D" or key == "delete" or key == "backspace")
-          and (active_tab_idx == 6 or active_tab_idx == 1)
+          and (active_tab_idx == 7 or active_tab_idx == 1)
         then
-          if active_tab_idx == 6 then
+          if active_tab_idx == 7 then
             -- Delete/Remove selected MCP from selected agent
             local targets = state.env_targets or {}
             local cur_target = targets[state.selected_target_idx or 1]
@@ -589,7 +956,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               state.status_msg = string.format("Removed '%s' from all AI agent environments.", selected.name)
             end
           end
-        elseif (key == "u" or key == "U") and active_tab_idx == 6 then
+        elseif (key == "u" or key == "U") and active_tab_idx == 7 then
           -- Remove selected MCP from ALL agents
           local s_keys = state.current_target_servers or {}
           local cur_srv = s_keys[state.selected_env_server_idx or 1]
@@ -598,7 +965,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             state.status_msg = string.format("Purged '%s' from ALL AI agent environments.", cur_srv)
             state.selected_env_server_idx = math.max(1, (state.selected_env_server_idx or 1) - 1)
           end
-        elseif (key == "enter" or key == "s" or key == "S" or key == "b" or key == "B") and active_tab_idx == 6 then
+        elseif (key == "enter" or key == "s" or key == "S" or key == "b" or key == "B") and active_tab_idx == 7 then
           -- Broadcast / Sync selected existent MCP across ALL agent environments
           local s_keys = state.current_target_servers or {}
           local cur_srv = s_keys[state.selected_env_server_idx or 1]
@@ -617,7 +984,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               state.status_msg = "Sync failed: " .. tostring(info_or_err)
             end
           end
-        elseif (key == "a" or key == "A") and active_tab_idx == 6 then
+        elseif (key == "a" or key == "A") and active_tab_idx == 7 then
           -- Add custom MCP to target agent
           local targets = state.env_targets or {}
           local cur_target = targets[state.selected_target_idx or 1]
@@ -658,17 +1025,20 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               end
             end
           end
-        elseif (key == "p" or key == "P") and active_tab_idx == 3 then
-          -- Open dynamic provider switcher
-          local provider_options = {
-            { id = "zenmux", name = "ZenMux AI", desc = "Multi-model gateway" },
-            { id = "openrouter", name = "OpenRouter", desc = "Unified API" },
-            { id = "anthropic", name = "Anthropic Claude", desc = "Native Anthropic API" },
-            { id = "gemini", name = "Google Gemini", desc = "Native Google Gemini API" },
-            { id = "openai", name = "OpenAI", desc = "Native OpenAI API" },
-            { id = "deepseek", name = "DeepSeek Native", desc = "Native DeepSeek API" },
-            { id = "ollama", name = "Ollama Local", desc = "Local self-hosted models" },
-          }
+        elseif (key == "p" or key == "P") and active_tab_idx == 4 then
+          -- Open dynamic provider switcher from configured providers
+          local provider_options = {}
+          local provs = config:get("providers") or {}
+          for pid, pdata in pairs(provs) do
+            if type(pdata) == "table" then
+              table.insert(provider_options, {
+                id = pid,
+                name = pdata.name or pid:upper(),
+                desc = pdata.base_url or "AI Service Endpoint",
+              })
+            end
+          end
+          table.sort(provider_options, function(a, b) return a.id < b.id end)
           local cur_prov = config:get("ai.default_provider", "zenmux")
           local init_idx = 1
           for idx, opt in ipairs(provider_options) do
@@ -681,11 +1051,11 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             type = "select_provider",
             is_select = true,
             title = "Select AI Service / Provider",
-            prompt = "Choose active API service (Hybrid TOML):",
+            prompt = "Choose active API service (from configured providers):",
             items = provider_options,
             selected_idx = init_idx,
           }
-        elseif (key == "m" or key == "M") and active_tab_idx == 3 then
+        elseif (key == "m" or key == "M") and active_tab_idx == 4 then
           -- Dynamically fetch available models for active provider
           local cur_prov = config:get("ai.default_provider", "zenmux")
           state.status_msg = "Fetching available models for " .. cur_prov:upper() .. "..."
@@ -707,22 +1077,22 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             items = avail_models,
             selected_idx = init_idx,
           }
-        elseif (key == "e" or key == "E") and active_tab_idx == 3 then
+        elseif (key == "e" or key == "E") and active_tab_idx == 4 then
           state.modal = {
             type = "edit_prompt",
             title = "Edit AI Prompt",
             prompt = "Enter prompt for AI model:",
             value = state.ai_prompt or "",
           }
-        elseif key == "c" and active_tab_idx == 4 then
+        elseif key == "c" and active_tab_idx == 5 then
           -- Clean all history on user request
           history:clean_all()
           state.status_msg = "Ephemeral history cleared successfully."
-        elseif key == "x" and active_tab_idx == 4 then
+        elseif key == "x" and active_tab_idx == 5 then
           -- Clean stale history (>24h)
           history:clean_stale(24)
           state.status_msg = "Stale history entries purged."
-        elseif key == "enter" and active_tab_idx == 4 then
+        elseif key == "enter" and active_tab_idx == 5 then
           -- Re-launch selected history session ephemerally
           local items = history.entries or {}
           local selected = items[state.selected_history_idx or 1]
@@ -745,7 +1115,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               state.status_msg = "Re-launch failed: " .. tostring(client_or_err)
             end
           end
-        elseif (key == "enter" or key == "e" or key == "E") and active_tab_idx == 5 then
+        elseif (key == "enter" or key == "e" or key == "E") and active_tab_idx == 6 then
           -- Edit setting value via interactive modal
           local s = state.settings_keys and state.settings_keys[state.selected_setting_idx]
           if s then
@@ -755,15 +1125,18 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               config:save()
               state.status_msg = "Updated " .. s.label .. " to " .. tostring(not cur)
             elseif s.type == "provider_choice" then
-              local provider_options = {
-                { id = "zenmux", name = "ZenMux AI", desc = "Multi-model gateway" },
-                { id = "openrouter", name = "OpenRouter", desc = "Unified API" },
-                { id = "anthropic", name = "Anthropic Claude", desc = "Native Anthropic API" },
-                { id = "gemini", name = "Google Gemini", desc = "Native Google Gemini API" },
-                { id = "openai", name = "OpenAI", desc = "Native OpenAI API" },
-                { id = "deepseek", name = "DeepSeek Native", desc = "Native DeepSeek API" },
-                { id = "ollama", name = "Ollama Local", desc = "Local self-hosted models" },
-              }
+              local provider_options = {}
+              local provs = config:get("providers") or {}
+              for pid, pdata in pairs(provs) do
+                if type(pdata) == "table" then
+                  table.insert(provider_options, {
+                    id = pid,
+                    name = pdata.name or pid:upper(),
+                    desc = pdata.base_url or "AI Service Endpoint",
+                  })
+                end
+              end
+              table.sort(provider_options, function(a, b) return a.id < b.id end)
               local cur_prov = config:get(s.key, "zenmux")
               local init_idx = 1
               for idx, opt in ipairs(provider_options) do
@@ -826,7 +1199,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
               }
             end
           end
-        elseif (key == "s" or key == "S") and active_tab_idx == 5 then
+        elseif (key == "s" or key == "S") and active_tab_idx == 6 then
           -- Save hybrid TOML configuration
           local ok, s_err = config:save()
           if ok then
@@ -834,7 +1207,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
           else
             state.status_msg = "Save failed: " .. tostring(s_err)
           end
-        elseif key == "space" and active_tab_idx == 5 then
+        elseif key == "space" and active_tab_idx == 6 then
           -- Toggle boolean setting
           local s = state.settings_keys and state.settings_keys[state.selected_setting_idx]
           if s and s.type == "boolean" then
@@ -843,7 +1216,7 @@ function app.run_tui(config, history, registry, ai, env_mgr)
             config:save()
             state.status_msg = "Updated " .. s.label .. " to " .. tostring(not cur)
           end
-        elseif key == "enter" and active_tab_idx == 3 then
+        elseif key == "enter" and active_tab_idx == 4 then
           -- Trigger AI synthesis
           state.status_msg = "Synthesizing with " .. active_model .. "..."
           engine:render()
@@ -882,12 +1255,68 @@ function app.main(args)
   )
   local registry = Registry.new(config)
   local ai = AiProvider.new(config)
-  local env_mgr = EnvManager.new()
+  local env_mgr = EnvManager.new(config)
+  local skill_mgr = SkillManager.new(config)
 
   local cmd = args[1]
   if cmd == "test" then
     local ok = app.run_cli_test(config, history, ai)
     os.exit(ok and 0 or 1)
+  elseif cmd == "skills" or cmd == "skills-list" then
+    local all_skills = skill_mgr:list_all()
+    io.write(string.format("Discovered Agent Skills (%d found):\n\n", #all_skills))
+    for _, sk in ipairs(all_skills) do
+      local in_agents = (sk.installed_in and #sk.installed_in > 0)
+        and table.concat(sk.installed_in, ", ")
+        or "none"
+      io.write(string.format("• \27[1;36m%-24s\27[0m [%s]\n  Desc: %s\n  Path: %s\n\n", sk.name, in_agents, sk.description or "None", sk.path or "custom"))
+    end
+    os.exit(0)
+  elseif cmd == "skill-add" or cmd == "skill-create" then
+    local sname = args[2]
+    local sdesc = args[3] or "Custom skill"
+    local target = args[4] or "all"
+    if not sname then
+      io.write("Usage: ai-bassmachine skill-add <skill_name> \"[description]\" [target_agent|all]\n")
+      os.exit(1)
+    end
+    local content = string.format("---\nname: %s\ndescription: %s\n---\n\n# %s\n\n%s\n", sname, sdesc, sname, sdesc)
+    local results = skill_mgr:install_skill(sname, content, target)
+    io.write(string.format("Installing skill '%s' to target: %s\n", sname, target))
+    for _, res in ipairs(results) do
+      io.write(string.format("  %s %-24s: %s\n", res.success and "✓" or "✗", res.name, res.path))
+    end
+    os.exit(0)
+  elseif cmd == "skill-sync" then
+    local sname = args[2]
+    if not sname then
+      io.write("Usage: ai-bassmachine skill-sync <skill_name>\n")
+      os.exit(1)
+    end
+    local ok, res_or_err = skill_mgr:sync_skill_to_all(sname)
+    if ok then
+      io.write(string.format("✓ Synced skill '%s' across all agent environments!\n", sname))
+      for _, res in ipairs(res_or_err) do
+        io.write(string.format("  %s %-24s: %s\n", res.success and "✓" or "✗", res.name, res.path))
+      end
+    else
+      io.write(string.format("✗ Failed: %s\n", tostring(res_or_err)))
+      os.exit(1)
+    end
+    os.exit(0)
+  elseif cmd == "skill-remove" then
+    local sname = args[2]
+    local target = args[3] or "all"
+    if not sname then
+      io.write("Usage: ai-bassmachine skill-remove <skill_name> [target_agent|all]\n")
+      os.exit(1)
+    end
+    local results = skill_mgr:remove_skill(sname, target)
+    io.write(string.format("Removing skill '%s' from target: %s\n", sname, target))
+    for _, res in ipairs(results) do
+      io.write(string.format("  ✓ %-24s: removed\n", res.name))
+    end
+    os.exit(0)
   elseif cmd == "env-list" or cmd == "agents" then
     local summary = env_mgr:list_all()
     io.write(string.format("AI Agent Environments (%d detected):\n\n", #summary))
@@ -913,10 +1342,10 @@ function app.main(args)
     local sname = args[2]
     local command_str = args[3]
     if not sname or not command_str then
-      io.write('Usage: mcp-bassmachine env-add <server_name> "<command>" [target_agent_id|all]\n')
+      io.write('Usage: ai-bassmachine env-add <server_name> "<command>" [target_agent_id|all]\n')
       io.write("Examples:\n")
-      io.write('  mcp-bassmachine env-add my-git "uvx mcp-server-git --repository /home" all\n')
-      io.write('  mcp-bassmachine env-add remote-tool "https://my-server.com/sse" antigravity\n')
+      io.write('  ai-bassmachine env-add my-git "uvx mcp-server-git --repository /home" all\n')
+      io.write('  ai-bassmachine env-add remote-tool "https://my-server.com/sse" antigravity\n')
       os.exit(1)
     end
     local target = args[4] or "all"
@@ -942,11 +1371,38 @@ function app.main(args)
       end
     end
     os.exit(0)
+  elseif cmd == "env-config" or cmd == "config-mcp" or cmd == "set-env" then
+    local sname = args[2]
+    local env_pair = args[3]
+    local target = args[4] or "all"
+    if not sname or not env_pair then
+      io.write("Usage: ai-bassmachine env-config <server_name> <KEY=VALUE> [target_agent_id|all]\n")
+      io.write("Examples:\n")
+      io.write('  ai-bassmachine env-config github GITHUB_PERSONAL_ACCESS_TOKEN=ghp_xxx all\n')
+      io.write('  ai-bassmachine env-config brave BRAVE_API_KEY=bsk_xxx antigravity\n')
+      os.exit(1)
+    end
+    local ek, ev = env_pair:match("^([^=]+)=(.*)$")
+    if not ek then
+      io.write("Error: Expected KEY=VALUE format\n")
+      os.exit(1)
+    end
+    local updates = { env = { [ek] = ev } }
+    local results = env_mgr:configure_mcp(sname, updates, target)
+    io.write(string.format("Configuring MCP '%s' (%s) on target(s): %s\n", sname, ek, target))
+    for _, res in ipairs(results) do
+      if res.success then
+        io.write(string.format("  ✓ %-24s: updated %s\n", res.name, res.path))
+      else
+        io.write(string.format("  ✗ %-24s: failed (%s)\n", res.name, tostring(res.error)))
+      end
+    end
+    os.exit(0)
   elseif cmd == "env-sync" or cmd == "sync" or cmd == "sync-all" then
     local sname = args[2]
     if not sname then
-      io.write("Usage: mcp-bassmachine env-sync <server_name>\n")
-      io.write("Example: mcp-bassmachine env-sync uizze\n")
+      io.write("Usage: ai-bassmachine env-sync <server_name>\n")
+      io.write("Example: ai-bassmachine env-sync uizze\n")
       os.exit(1)
     end
     local ok, info_or_err = env_mgr:sync_mcp_to_all(sname)
@@ -965,7 +1421,7 @@ function app.main(args)
   elseif cmd == "env-remove" or cmd == "remove" then
     local sname = args[2]
     if not sname then
-      io.write("Usage: mcp-bassmachine env-remove <server_name> [target_agent_id|all]\n")
+      io.write("Usage: ai-bassmachine env-remove <server_name> [target_agent_id|all]\n")
       os.exit(1)
     end
     local target = args[3] or "all"
@@ -982,7 +1438,7 @@ function app.main(args)
   elseif cmd == "run" then
     local mcp_cmd = args[2]
     if not mcp_cmd then
-      io.write('Usage: mcp-bassmachine run "<command>"\n')
+      io.write('Usage: ai-bassmachine run "<command>"\n')
       os.exit(1)
     end
     local ok = app.run_cli_ephemeral_mcp(mcp_cmd, config, history)
@@ -1046,7 +1502,7 @@ function app.main(args)
     for _, pid in ipairs(ConfigManager.key_providers()) do
       io.write(string.format("  %-11s %-10s %s\n", pid, config:key_source(pid), config:masked_api_key(pid)))
     end
-    io.write("Secrets file: " .. require("mcp-bassmachine.config.secrets").path() .. "\n")
+    io.write("Secrets file: " .. require("ai-bassmachine.config.secrets").path() .. "\n")
     for _, n in ipairs(config.notices or {}) do
       io.write("NOTE: " .. n .. "\n")
     end
@@ -1054,7 +1510,7 @@ function app.main(args)
   elseif cmd == "clear-key" then
     local pid = args[2]
     if not pid then
-      io.write("Usage: mcp-bassmachine clear-key <provider>\n")
+      io.write("Usage: ai-bassmachine clear-key <provider>\n")
       os.exit(1)
     end
     local ok_c, err_c = config:clear_api_key(pid)
@@ -1069,7 +1525,7 @@ function app.main(args)
     os.exit(0)
   else
     -- Default to interactive TUI
-    app.run_tui(config, history, registry, ai, env_mgr)
+    app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
   end
 end
 

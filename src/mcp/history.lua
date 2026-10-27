@@ -1,8 +1,8 @@
 -- MCP Bass Machine - Ephemeral History Manager
 -- Tracks MCP sessions without permanent installation. Cleanable on-demand or automatically.
 
-local json = require("mcp-bassmachine.utils.json")
-local term = require("mcp-bassmachine.utils.term")
+local json = require("ai-bassmachine.utils.json")
+local term = require("ai-bassmachine.utils.term")
 
 local HistoryManager = {}
 HistoryManager.__index = HistoryManager

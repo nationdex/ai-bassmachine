@@ -1,8 +1,8 @@
 package.path = "src/?.lua;src/?/init.lua;" .. package.path
 require("loader")
 
-local ConfigManager = require("mcp-bassmachine.config.manager")
-local AiProvider = require("mcp-bassmachine.ai.provider")
+local ConfigManager = require("ai-bassmachine.config.manager")
+local AiProvider = require("ai-bassmachine.ai.provider")
 
 local config = ConfigManager.new("bassmachine.toml")
 local ai = AiProvider.new(config)

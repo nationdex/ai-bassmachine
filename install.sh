@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# MCP Bass Machine - Unix/macOS One-Liner Installer
+# AI Bass Machine - Unix/macOS One-Liner Installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/nationdex/mcp-bassmachine/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/nationdex/ai-bassmachine/main/install.sh | bash
 
 set -euo pipefail
 
-REPO_URL="${MCP_BASSMACHINE_REPO:-https://github.com/nationdex/mcp-bassmachine.git}"
-INSTALL_DIR="${MCP_BASSMACHINE_HOME:-$HOME/.mcp-bassmachine}"
-BIN_DIR="${MCP_BASSMACHINE_BIN:-$HOME/.local/bin}"
-# Pin a release tag for reproducible installs, e.g. MCP_BASSMACHINE_REF=v0.1.0
-REF="${MCP_BASSMACHINE_REF:-main}"
+REPO_URL="${AI_BASSMACHINE_REPO:-https://github.com/nationdex/ai-bassmachine.git}"
+INSTALL_DIR="${AI_BASSMACHINE_HOME:-$HOME/.ai-bassmachine}"
+BIN_DIR="${AI_BASSMACHINE_BIN:-$HOME/.local/bin}"
+# Pin a release tag for reproducible installs, e.g. AI_BASSMACHINE_REF=v0.1.0
+REF="${AI_BASSMACHINE_REF:-main}"
 
 # ANSI Colors
 BOLD="\033[1m"
@@ -20,7 +20,7 @@ AMBER="\033[38;2;255;185;35m"
 RED="\033[38;2;255;70;70m"
 RESET="\033[0m"
 
-echo -e "${CYAN}${BOLD}🎛  Installing MCP Bass Machine...${RESET}"
+echo -e "${CYAN}${BOLD}🎛  Installing AI Bass Machine...${RESET}"
 
 # 1. Dependency checks
 HAS_LUA=0
@@ -96,12 +96,14 @@ fi
 
 # 3. Create Symlink / Wrapper in BIN_DIR
 mkdir -p "$BIN_DIR"
-WRAPPER_PATH="$BIN_DIR/mcp-bassmachine"
+WRAPPER_PATH="$BIN_DIR/ai-bassmachine"
+LEGACY_WRAPPER_PATH="$BIN_DIR/mcp-bassmachine"
 
-printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$INSTALL_DIR/bin/mcp-bassmachine" > "$WRAPPER_PATH"
+printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$INSTALL_DIR/bin/ai-bassmachine" > "$WRAPPER_PATH"
+printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$INSTALL_DIR/bin/ai-bassmachine" > "$LEGACY_WRAPPER_PATH"
 
-chmod +x "$WRAPPER_PATH"
-chmod +x "$INSTALL_DIR/bin/mcp-bassmachine"
+chmod +x "$WRAPPER_PATH" "$LEGACY_WRAPPER_PATH"
+chmod +x "$INSTALL_DIR/bin/ai-bassmachine" "$INSTALL_DIR/bin/mcp-bassmachine"
 
 # 4. Verify PATH contains BIN_DIR
 PATH_NEEDS_UPDATE=1
@@ -122,8 +124,8 @@ if [ "$PATH_NEEDS_UPDATE" -eq 1 ]; then
   fi
 
   if [ -n "$SHELL_PROFILE" ] && [ -f "$SHELL_PROFILE" ]; then
-    if ! grep -q 'mcp-bassmachine' "$SHELL_PROFILE"; then
-      echo -e "\n# MCP Bass Machine PATH" >> "$SHELL_PROFILE"
+    if ! grep -q 'ai-bassmachine' "$SHELL_PROFILE"; then
+      echo -e "\n# AI Bass Machine PATH" >> "$SHELL_PROFILE"
       echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$SHELL_PROFILE"
       echo -e "Added ${BIN_DIR} to ${SHELL_PROFILE}"
     fi
@@ -132,13 +134,13 @@ fi
 
 # 5. Success Banner
 echo ""
-echo -e "${GREEN}${BOLD}✓ MCP Bass Machine installed successfully!${RESET}"
+echo -e "${GREEN}${BOLD}✓ AI Bass Machine installed successfully!${RESET}"
 echo -e "Installed to:  ${CYAN}${INSTALL_DIR}${RESET}"
 echo -e "Binary linked: ${CYAN}${WRAPPER_PATH}${RESET}"
 echo ""
 echo -e "To launch now:"
-echo -e "  ${MAGENTA}${BOLD}mcp-bassmachine${RESET}"
+echo -e "  ${MAGENTA}${BOLD}ai-bassmachine${RESET}"
 if [ "$PATH_NEEDS_UPDATE" -eq 1 ]; then
-  echo -e "${AMBER}(If 'mcp-bassmachine' is not yet found, reload your shell or run: export PATH=\"\$PATH:$BIN_DIR\")${RESET}"
+  echo -e "${AMBER}(If 'ai-bassmachine' is not yet found, reload your shell or run: export PATH=\"\$PATH:$BIN_DIR\")${RESET}"
 fi
 echo ""
