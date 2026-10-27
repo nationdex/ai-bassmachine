@@ -116,6 +116,9 @@ global record SkillManagerModule
   install_skill: function(self: SkillManagerModule, name: string, content: string, target: string): {any}
   remove_skill: function(self: SkillManagerModule, name: string, target: string): {any}
   sync_skill_to_all: function(self: SkillManagerModule, name: string): boolean, any
+  refresh_marketplace: function(self: SkillManagerModule): boolean, integer
+  get_marketplace_skills: function(self: SkillManagerModule, query: string): {any}
+  install_from_marketplace: function(self: SkillManagerModule, skill_item: any, target_id: string): boolean, {any}, string
 end
 
 global record BassMachineModule

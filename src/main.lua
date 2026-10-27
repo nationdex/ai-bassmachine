@@ -910,6 +910,59 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
             end
             state.status_msg = string.format("Installed '%s' across %d AI agent environments!", sname, ok_cnt)
           end
+        elseif (key == "t" or key == "T") and active_tab_idx == 3 then
+          local cur_mode = state.skill_view_mode or "discovered"
+          if cur_mode == "discovered" then
+            state.skill_view_mode = "marketplace"
+            state.status_msg = "Viewing Online Skills Marketplace (Press [T] to return to Local Skills)"
+          else
+            state.skill_view_mode = "discovered"
+            state.status_msg = "Viewing Discovered Local Agent Skills (Press [T] for Online Marketplace)"
+          end
+          state.selected_skill_idx = 1
+        elseif (key == "r" or key == "R") and active_tab_idx == 3 then
+          state.status_msg = "Syncing live Skills marketplace from GitHub (Anthropic & ECC)..."
+          engine:render()
+          local ok_m, count_m = skill_mgr:refresh_marketplace()
+          if ok_m then
+            state.status_msg = string.format("Skills marketplace synced! %d agent skills indexed.", count_m)
+          else
+            state.status_msg = "Skills marketplace sync complete."
+          end
+        elseif (key == "enter" or key == "i" or key == "I") and active_tab_idx == 3 then
+          if (state.skill_view_mode or "discovered") == "marketplace" then
+            local skills = state.skills_items or {}
+            local cur_sk = skills[state.selected_skill_idx or 1]
+            if cur_sk then
+              state.status_msg = "Downloading & installing skill '" .. cur_sk.name .. "'..."
+              engine:render()
+              local ok_i, res_i, _ = skill_mgr:install_from_marketplace(cur_sk, "all")
+              if ok_i then
+                local ok_c = 0
+                for _, r in ipairs(res_i or {}) do
+                  if r.success then
+                    ok_c = ok_c + 1
+                  end
+                end
+                state.status_msg =
+                  string.format("Installed marketplace skill '%s' across %d agent environment(s)!", cur_sk.name, ok_c)
+              else
+                state.status_msg = "Skill install failed: " .. tostring(res_i)
+              end
+            end
+          else
+            -- Local skills: sync/broadcast to all
+            local skills = state.skills_items or {}
+            local cur_sk = skills[state.selected_skill_idx or 1]
+            if cur_sk then
+              local ok, s_err = skill_mgr:sync_skill_to_all(cur_sk.name)
+              if ok then
+                state.status_msg = string.format("Synced skill '%s' across all agent environments!", cur_sk.name)
+              else
+                state.status_msg = "Skill sync failed: " .. tostring(s_err)
+              end
+            end
+          end
         elseif key == "/" and active_tab_idx == 3 then
           state.modal = {
             type = "search_skills",
@@ -1296,6 +1349,53 @@ function app.main(args)
           sk.path or "custom"
         )
       )
+    end
+    os.exit(0)
+  elseif cmd == "skills-market" or cmd == "skill-market" then
+    local q = args[2]
+    local market_skills = skill_mgr:get_marketplace_skills(q)
+    io.write(string.format("Online Skills Marketplace (%d available):\n\n", #market_skills))
+    for _, sk in ipairs(market_skills) do
+      io.write(
+        string.format(
+          "• \27[1;36m%-28s\27[0m [%s | %s]\n  Desc: %s\n  URL:  %s\n\n",
+          sk.name,
+          sk.author or "Community",
+          sk.category or "General",
+          sk.description or "None",
+          sk.url or ""
+        )
+      )
+    end
+    os.exit(0)
+  elseif cmd == "skill-install" then
+    local sname = args[2]
+    local target = args[3] or "all"
+    if not sname then
+      io.write("Usage: ai-bassmachine skill-install <skill_name> [target_agent|all]\n")
+      os.exit(1)
+    end
+    local market_skills = skill_mgr:get_marketplace_skills()
+    local matched_item = nil
+    for _, sk in ipairs(market_skills) do
+      if sk.name:lower() == sname:lower() then
+        matched_item = sk
+        break
+      end
+    end
+    if not matched_item then
+      io.write(string.format("✗ Skill '%s' not found in online marketplace.\n", sname))
+      os.exit(1)
+    end
+    io.write(string.format("Downloading and installing '%s' to target: %s...\n", matched_item.name, target))
+    local ok, res, _ = skill_mgr:install_from_marketplace(matched_item, target)
+    if ok then
+      for _, r in ipairs(res or {}) do
+        io.write(string.format("  %s %-24s: %s\n", r.success and "✓" or "✗", r.name, r.path))
+      end
+    else
+      io.write(string.format("✗ Failed: %s\n", tostring(res)))
+      os.exit(1)
     end
     os.exit(0)
   elseif cmd == "skill-add" or cmd == "skill-create" then

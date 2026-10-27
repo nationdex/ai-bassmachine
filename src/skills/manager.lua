@@ -1,7 +1,8 @@
--- AI Bass Machine - Pure Dynamic Agent Skills Engine
+-- AI Bass Machine - Pure Dynamic Agent Skills Engine & Marketplace
 -- 100% dynamic: discovers, inspects, installs, syncs, and removes Agent Skills
--- by reading real SKILL.md files from filesystem or URLs with zero hardcoded catalogs.
+-- by reading real SKILL.md files from filesystem or live registries with zero hardcoded catalogs.
 
+local json = require("ai-bassmachine.utils.json")
 local term = require("ai-bassmachine.utils.term")
 
 local SkillManager = {}
@@ -88,7 +89,206 @@ function SkillManager.new(config)
   local self = setmetatable({}, SkillManager)
   self.config = config
   self.targets = build_skill_targets(config)
+  self.cache_file = get_home() .. "/.bassmachine_skills_cache.json"
+  self.marketplace_cache = {}
+  self.cached_at = 0
+  self:load_cache_from_disk()
+
+  -- Auto-fetch remote skills marketplace on cold start if cache is empty
+  if #self.marketplace_cache == 0 then
+    self:refresh_marketplace()
+  end
+
   return self
+end
+
+function SkillManager:load_cache_from_disk()
+  local f = io.open(self.cache_file, "r")
+  if f then
+    local content = f:read("*a")
+    f:close()
+    if content and #content > 0 then
+      local parsed = json.decode(content)
+      if type(parsed) == "table" and parsed.items then
+        self.marketplace_cache = parsed.items
+        self.cached_at = parsed.cached_at or 0
+      end
+    end
+  end
+end
+
+function SkillManager:save_cache_to_disk()
+  local f = io.open(self.cache_file, "w")
+  if f then
+    local payload = json.encode({
+      cached_at = os.time(),
+      items = self.marketplace_cache,
+    })
+    f:write(payload)
+    f:close()
+  end
+end
+
+-- 1. Fetch official Anthropic Skills repo via GitHub Trees API
+function SkillManager.fetch_anthropic_skills()
+  local cmd = "curl -s -m 8 'https://api.github.com/repos/anthropics/skills/git/trees/main?recursive=1' 2>/dev/null"
+  local f = term.safe_popen(cmd)
+  if not f then
+    return {}
+  end
+  local body = f:read("*a")
+  f:close()
+
+  if not body or #body < 50 then
+    return {}
+  end
+
+  local parsed = json.decode(body)
+  if not parsed or type(parsed) ~= "table" or not parsed.tree then
+    return {}
+  end
+
+  local results = {}
+  local seen = {}
+
+  for _, item in ipairs(parsed.tree) do
+    if item.path and item.path:match("^skills/[^/]+/SKILL%.md$") then
+      local sname = item.path:match("^skills/([^/]+)/SKILL%.md$")
+      if sname and not seen[sname] then
+        seen[sname] = true
+        local raw_url = "https://raw.githubusercontent.com/anthropics/skills/main/" .. item.path
+        table.insert(results, {
+          id = "anthropic-" .. sname,
+          name = sname,
+          author = "Anthropic Official",
+          source = "anthropic/skills",
+          url = "https://github.com/anthropics/skills/tree/main/skills/" .. sname,
+          raw_url = raw_url,
+          category = "Official Skills",
+          description = "Official skill for " .. sname,
+        })
+      end
+    end
+  end
+
+  return results
+end
+
+-- 2. Fetch community ECC (Everything Claude Code / OpenCode) skills repo
+function SkillManager.fetch_ecc_skills()
+  local cmd = "curl -s -m 8 'https://api.github.com/repos/affaan-m/ECC/git/trees/main?recursive=1' 2>/dev/null"
+  local f = term.safe_popen(cmd)
+  if not f then
+    return {}
+  end
+  local body = f:read("*a")
+  f:close()
+
+  if not body or #body < 50 then
+    return {}
+  end
+
+  local parsed = json.decode(body)
+  if not parsed or type(parsed) ~= "table" or not parsed.tree then
+    return {}
+  end
+
+  local results = {}
+  local seen = {}
+
+  for _, item in ipairs(parsed.tree) do
+    if item.path and item.path:match("^skills/[^/]+/SKILL%.md$") then
+      local sname = item.path:match("^skills/([^/]+)/SKILL%.md$")
+      if sname and not seen[sname] then
+        seen[sname] = true
+        local raw_url = "https://raw.githubusercontent.com/affaan-m/ECC/main/" .. item.path
+        table.insert(results, {
+          id = "ecc-" .. sname,
+          name = sname,
+          author = "affaan-m / ECC",
+          source = "ecc-skills",
+          url = "https://github.com/affaan-m/ECC/tree/main/skills/" .. sname,
+          raw_url = raw_url,
+          category = "Engineering & Harness",
+          description = "ECC agent skill: " .. sname,
+        })
+      end
+    end
+  end
+
+  return results
+end
+
+-- Refresh marketplace cache from live GitHub sources
+function SkillManager:refresh_marketplace()
+  local anthropic_skills = self.fetch_anthropic_skills()
+  local ecc_skills = self.fetch_ecc_skills()
+
+  local combined = {}
+  local seen = {}
+
+  local function add_list(list)
+    for _, it in ipairs(list) do
+      if not seen[it.name] then
+        seen[it.name] = true
+        table.insert(combined, it)
+      end
+    end
+  end
+
+  add_list(anthropic_skills)
+  add_list(ecc_skills)
+
+  if #combined > 0 then
+    self.marketplace_cache = combined
+    self.cached_at = os.time()
+    self:save_cache_to_disk()
+    return true, #combined
+  end
+  return false, 0
+end
+
+-- Get all marketplace skills (with search filter)
+function SkillManager:get_marketplace_skills(query)
+  local all = self.marketplace_cache or {}
+  if not query or query == "" then
+    return all
+  end
+
+  query = query:lower()
+  local filtered = {}
+  for _, sk in ipairs(all) do
+    local match = (sk.name and sk.name:lower():find(query, 1, true))
+      or (sk.description and sk.description:lower():find(query, 1, true))
+      or (sk.author and sk.author:lower():find(query, 1, true))
+      or (sk.category and sk.category:lower():find(query, 1, true))
+    if match then
+      table.insert(filtered, sk)
+    end
+  end
+  return filtered
+end
+
+-- Install a skill directly from the marketplace URL into agent environments
+function SkillManager:install_from_marketplace(skill_item, target_id)
+  if not skill_item or not skill_item.raw_url then
+    return false, "Missing raw_url for skill"
+  end
+
+  local cmd = string.format("curl -s -m 8 %s 2>/dev/null", term.shell_quote(skill_item.raw_url))
+  local f = term.safe_popen(cmd)
+  if not f then
+    return false, "Failed to download skill content"
+  end
+  local content = f:read("*a")
+  f:close()
+
+  if not content or #content == 0 or content:find("404: Not Found", 1, true) then
+    return false, "Could not fetch SKILL.md from repository"
+  end
+
+  local results = self:install_skill(skill_item.name, content, target_id or "all")
+  return true, results, content
 end
 
 function SkillManager:get_targets()

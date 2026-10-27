@@ -66,6 +66,13 @@ skill_mgr:remove_skill("test-runner", "all")
 local all_5 = skill_mgr:list_all()
 assert(#all_5 == 1, "expected only code-reviewer remaining")
 
+-- 6. Skills Marketplace dynamic discovery
+local market_skills = skill_mgr:get_marketplace_skills()
+assert(#market_skills > 0, "expected online skills in marketplace")
+local sample_market_skill = market_skills[1]
+assert(sample_market_skill.name ~= nil, "missing name in market skill")
+assert(sample_market_skill.raw_url ~= nil, "missing raw_url in market skill")
+
 -- Cleanup
 os.execute("rm -rf " .. tmp_agents .. " " .. tmp_claude .. " " .. tmp_opencode)
 
