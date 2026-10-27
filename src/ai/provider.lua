@@ -141,7 +141,36 @@ function AiProvider:fetch_available_models(provider_name)
     end
   end
 
-  -- 2. Fall back to provider configured default model if dynamic API query returned none
+  -- 2. If provider requires auth and user hasn't set an API key yet,
+  -- query the open models directory to provide live, up-to-date models for that provider
+  if #models == 0 then
+    local vendor_prefix_map = {
+      openai = "openai",
+      anthropic = "anthropic",
+      gemini = "google",
+      deepseek = "deepseek",
+    }
+    local target_prefix = vendor_prefix_map[prov_id]
+    if target_prefix then
+      local open_resp = run_curl({ url = "https://openrouter.ai/api/v1/models", timeout = 5 })
+      if open_resp and #open_resp > 0 then
+        local open_decoded = json.decode(open_resp)
+        if open_decoded and type(open_decoded) == "table" and open_decoded.data then
+          local prefix_pattern = "^" .. target_prefix .. "/(.*)$"
+          for _, m in ipairs(open_decoded.data) do
+            if m.id then
+              local model_id = m.id:match(prefix_pattern)
+              if model_id and not model_id:find(":free") and not model_id:find(":batch") then
+                table.insert(models, model_id)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- 3. Fall back to provider configured default model if dynamic API query returned none
   if #models == 0 then
     local configured_model = prov.default_model or self.config:get("ai.default_model")
     if configured_model and #configured_model > 0 then
