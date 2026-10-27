@@ -512,6 +512,13 @@ function app.run_tui(config, history, registry, ai, env_mgr, skill_mgr)
               local p_def = config:get("providers." .. sel_item.id .. ".default_model")
               if p_def then
                 config:set("ai.default_model", p_def)
+              else
+                -- Automatically query models for new provider
+                local fetched_models = ai:fetch_available_models(sel_item.id)
+                if #fetched_models > 0 then
+                  config:set("ai.default_model", fetched_models[1])
+                  p_def = fetched_models[1]
+                end
               end
               config:save()
               state.status_msg =

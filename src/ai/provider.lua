@@ -107,7 +107,7 @@ function AiProvider:fetch_available_models(provider_name)
       endpoint = base_url:gsub("/v1/?$", "") .. "/api/tags"
     else
       -- OpenAI, ZenMux, OpenRouter, DeepSeek (standard /models)
-      if #api_key > 0 or prov_id == "openrouter" then
+      if #api_key > 0 or prov_id == "openrouter" or prov_id == "zenmux" then
         endpoint = base_url .. "/models"
         if #api_key > 0 then
           headers = { "Authorization: Bearer " .. api_key }
